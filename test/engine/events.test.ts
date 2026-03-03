@@ -33,16 +33,21 @@ describe("Event Triggers", () => {
     registerEventTriggers(sdk)
   })
 
-  it("registers 3 functions", () => {
-    expect(sdk.registerFunction).toHaveBeenCalledTimes(3)
+  it("registers 8 functions", () => {
+    expect(sdk.registerFunction).toHaveBeenCalledTimes(8)
     expect(handlers.has("event::sandbox-created")).toBe(true)
     expect(handlers.has("event::sandbox-killed")).toBe(true)
     expect(handlers.has("event::sandbox-expired")).toBe(true)
+    expect(handlers.has("event::sandbox-paused")).toBe(true)
+    expect(handlers.has("event::sandbox-resumed")).toBe(true)
+    expect(handlers.has("event::sandbox-snapshot")).toBe(true)
+    expect(handlers.has("event::sandbox-exec")).toBe(true)
+    expect(handlers.has("event::sandbox-error")).toBe(true)
   })
 
-  it("registers 3 triggers", () => {
-    expect(sdk.registerTrigger).toHaveBeenCalledTimes(3)
-    expect(triggers).toHaveLength(3)
+  it("registers 8 triggers", () => {
+    expect(sdk.registerTrigger).toHaveBeenCalledTimes(8)
+    expect(triggers).toHaveLength(8)
   })
 
   it("each trigger has type queue with correct topic", () => {
@@ -50,6 +55,11 @@ describe("Event Triggers", () => {
       "event::sandbox-created": "sandbox.created",
       "event::sandbox-killed": "sandbox.killed",
       "event::sandbox-expired": "sandbox.expired",
+      "event::sandbox-paused": "sandbox.paused",
+      "event::sandbox-resumed": "sandbox.resumed",
+      "event::sandbox-snapshot": "sandbox.snapshot",
+      "event::sandbox-exec": "sandbox.exec",
+      "event::sandbox-error": "sandbox.error",
     }
 
     for (const trigger of triggers) {

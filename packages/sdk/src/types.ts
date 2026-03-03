@@ -7,6 +7,16 @@ export interface SandboxCreateOptions {
   network?: boolean;
   env?: Record<string, string>;
   workdir?: string;
+  template?: string;
+}
+
+export interface SandboxTemplate {
+  id: string;
+  name: string;
+  description: string;
+  config: Record<string, unknown>;
+  builtin: boolean;
+  createdAt: number;
 }
 
 export interface SandboxInfo {
@@ -60,6 +70,15 @@ export interface KernelSpec {
   name: string;
   language: string;
   displayName: string;
+}
+
+export interface SnapshotInfo {
+  id: string;
+  sandboxId: string;
+  name: string;
+  imageId: string;
+  size: number;
+  createdAt: number;
 }
 
 export interface ClientConfig {

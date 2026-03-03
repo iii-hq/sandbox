@@ -11,6 +11,7 @@ import {
 import type {
   Sandbox,
   SandboxConfig,
+  SandboxTemplate,
   ListOptions,
   PaginatedResult,
 } from "../types.js";
@@ -24,7 +25,20 @@ export function registerSandboxFunctions(
     { id: "sandbox::create", description: "Create a new sandbox container" },
     async (input: unknown): Promise<Sandbox> => {
       const ctx = getContext();
-      const cfg = validateSandboxConfig(input);
+      const raw = input as Record<string, unknown>;
+
+      let merged = raw;
+      if (raw.template) {
+        const templates = await kv.list<SandboxTemplate>(SCOPES.TEMPLATES);
+        const tpl = templates.find(
+          (t) => t.name === raw.template || t.id === raw.template,
+        );
+        if (!tpl) throw new Error(`Template not found: ${raw.template}`);
+        const { template: _, ...overrides } = raw;
+        merged = { ...tpl.config, ...overrides };
+      }
+
+      const cfg = validateSandboxConfig(merged);
 
       if (!validateImageAllowed(cfg.image, config.allowedImages)) {
         throw new Error(`Image not allowed: ${cfg.image}`);
