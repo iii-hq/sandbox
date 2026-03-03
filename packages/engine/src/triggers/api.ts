@@ -23,9 +23,9 @@ export function registerApiTriggers(sdk: any, config: EngineConfig) {
         try {
           const merged = Object.assign(
             {},
+            req.query_params as Record<string, unknown>,
             req.body as Record<string, unknown>,
             req.path_params as Record<string, unknown>,
-            req.query_params as Record<string, unknown>,
           );
           const result = await sdk.trigger(fnId, merged);
           return { status_code: 200, body: result };

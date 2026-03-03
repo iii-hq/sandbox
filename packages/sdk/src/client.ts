@@ -1,12 +1,16 @@
 import type { ClientConfig } from "./types.js";
 
+const DEFAULT_TIMEOUT_MS = 30_000;
+
 export class HttpClient {
   private baseUrl: string;
   private token?: string;
+  private timeoutMs: number;
 
   constructor(config: ClientConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, "");
     this.token = config.token;
+    this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
   private headers(): Record<string, string> {
@@ -18,6 +22,7 @@ export class HttpClient {
   async get<T>(path: string): Promise<T> {
     const res = await fetch(`${this.baseUrl}${path}`, {
       headers: this.headers(),
+      signal: AbortSignal.timeout(this.timeoutMs),
     });
     if (!res.ok)
       throw new Error(`GET ${path} failed: ${res.status} ${await res.text()}`);
@@ -29,6 +34,7 @@ export class HttpClient {
       method: "POST",
       headers: this.headers(),
       body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(this.timeoutMs),
     });
     if (!res.ok)
       throw new Error(`POST ${path} failed: ${res.status} ${await res.text()}`);
@@ -39,6 +45,7 @@ export class HttpClient {
     const res = await fetch(`${this.baseUrl}${path}`, {
       method: "DELETE",
       headers: this.headers(),
+      signal: AbortSignal.timeout(this.timeoutMs),
     });
     if (!res.ok)
       throw new Error(

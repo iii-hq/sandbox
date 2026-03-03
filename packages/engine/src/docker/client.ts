@@ -10,6 +10,7 @@ import type {
 } from "../types.js";
 
 const docker = new Docker();
+const MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
 
 export function getDocker(): Docker {
   return docker;
@@ -85,21 +86,30 @@ export async function execInContainer(
       docker.modem.demuxStream(stream, passStdout, passStderr);
 
       passStdout.on("data", (d: Buffer) => {
-        stdout += d.toString();
+        if (stdout.length < MAX_OUTPUT_BYTES) stdout += d.toString();
       });
       passStderr.on("data", (d: Buffer) => {
-        stderr += d.toString();
+        if (stderr.length < MAX_OUTPUT_BYTES) stderr += d.toString();
       });
 
       stream.on("end", async () => {
         clearTimeout(timer);
-        const inspect = await exec.inspect();
-        resolve({
-          exitCode: inspect.ExitCode ?? -1,
-          stdout,
-          stderr,
-          duration: Date.now() - start,
-        });
+        try {
+          const inspect = await exec.inspect();
+          resolve({
+            exitCode: inspect.ExitCode ?? -1,
+            stdout,
+            stderr,
+            duration: Date.now() - start,
+          });
+        } catch {
+          resolve({
+            exitCode: -1,
+            stdout,
+            stderr,
+            duration: Date.now() - start,
+          });
+        }
       });
     });
   });
@@ -143,12 +153,16 @@ export async function execStreamInContainer(
 
       stream.on("end", async () => {
         clearTimeout(timer);
-        const inspect = await exec.inspect();
-        onChunk({
-          type: "exit",
-          data: String(inspect.ExitCode ?? -1),
-          timestamp: Date.now(),
-        });
+        try {
+          const inspect = await exec.inspect();
+          onChunk({
+            type: "exit",
+            data: String(inspect.ExitCode ?? -1),
+            timestamp: Date.now(),
+          });
+        } catch {
+          onChunk({ type: "exit", data: "-1", timestamp: Date.now() });
+        }
         resolve();
       });
     });
@@ -237,7 +251,7 @@ export async function listContainerDir(
       const [name, size, mtime, type] = line.split("\t");
       return {
         name,
-        path: `${path}/${name}`.replace("//", "/"),
+        path: `${path}/${name}`.replace(/\/\/+/g, "/"),
         size: parseInt(size, 10) || 0,
         isDirectory: type === "d",
         modifiedAt: Math.floor(parseFloat(mtime) * 1000),
@@ -279,19 +293,20 @@ export async function getFileInfo(
   container: Docker.Container,
   paths: string[],
 ): Promise<FileMetadata[]> {
+  const quoted = paths.map((p) => `"${p.replace(/"/g, '\\"')}"`).join(" ");
   const result = await execInContainer(
     container,
-    ["stat", "--format", "%n\\t%s\\t%A\\t%U\\t%G\\t%F\\t%Y", ...paths],
+    ["sh", "-c", `stat --format '%n\t%s\t%A\t%U\t%G\t%F\t%Y' ${quoted}`],
     10000,
   );
   if (result.exitCode !== 0) throw new Error(`stat failed: ${result.stderr}`);
   return result.stdout
     .trim()
-    .split("\\n")
+    .split("\n")
     .filter(Boolean)
     .map((line) => {
       const [path, size, permissions, owner, group, type, mtime] =
-        line.split("\\t");
+        line.split("\t");
       return {
         path,
         size: parseInt(size, 10) || 0,

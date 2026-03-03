@@ -1,68 +1,69 @@
 export interface SandboxCreateOptions {
-  image?: string
-  name?: string
-  timeout?: number
-  memory?: number
-  cpu?: number
-  network?: boolean
-  env?: Record<string, string>
-  workdir?: string
+  image?: string;
+  name?: string;
+  timeout?: number;
+  memory?: number;
+  cpu?: number;
+  network?: boolean;
+  env?: Record<string, string>;
+  workdir?: string;
 }
 
 export interface SandboxInfo {
-  id: string
-  name: string
-  image: string
-  status: "creating" | "running" | "paused" | "stopped"
-  createdAt: number
-  expiresAt: number
+  id: string;
+  name: string;
+  image: string;
+  status: "creating" | "running" | "paused" | "stopped";
+  createdAt: number;
+  expiresAt: number;
 }
 
 export interface ExecResult {
-  exitCode: number
-  stdout: string
-  stderr: string
-  duration: number
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  duration: number;
 }
 
 export interface ExecStreamChunk {
-  type: "stdout" | "stderr" | "exit"
-  data: string
-  timestamp: number
+  type: "stdout" | "stderr" | "exit";
+  data: string;
+  timestamp: number;
 }
 
 export interface FileInfo {
-  name: string
-  path: string
-  size: number
-  isDirectory: boolean
-  modifiedAt: number
+  name: string;
+  path: string;
+  size: number;
+  isDirectory: boolean;
+  modifiedAt: number;
 }
 
 export interface SandboxMetrics {
-  sandboxId: string
-  cpuPercent: number
-  memoryUsageMb: number
-  memoryLimitMb: number
-  networkRxBytes: number
-  networkTxBytes: number
-  pids: number
+  sandboxId: string;
+  cpuPercent: number;
+  memoryUsageMb: number;
+  memoryLimitMb: number;
+  networkRxBytes: number;
+  networkTxBytes: number;
+  pids: number;
 }
 
 export interface CodeResult {
-  output: string
-  error?: string
-  executionTime: number
-  mimeType?: string
+  output: string;
+  error?: string;
+  executionTime: number;
+  mimeType?: string;
 }
 
 export interface KernelSpec {
-  name: string
-  language: string
-  displayName: string
+  name: string;
+  language: string;
+  displayName: string;
 }
 
 export interface ClientConfig {
-  baseUrl: string
-  token?: string
+  baseUrl: string;
+  token?: string;
+  timeoutMs?: number;
 }

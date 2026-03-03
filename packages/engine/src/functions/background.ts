@@ -23,11 +23,12 @@ export function registerBackgroundFunctions(
         throw new Error(`Sandbox not running: ${sandbox.status}`);
 
       const execId = generateId("bg");
-      const cmd = validateCommand(input.command);
+      const shellCmd = `(${input.command}) > /tmp/${execId}.log 2>&1`;
+      const cmd = validateCommand(shellCmd);
       const container = getDocker().getContainer(`iii-sbx-${input.id}`);
 
       const exec = await container.exec({
-        Cmd: [...cmd, ">", `/tmp/${execId}.log`, "2>&1", "&"],
+        Cmd: cmd,
         AttachStdout: false,
         AttachStderr: false,
         Detach: true,

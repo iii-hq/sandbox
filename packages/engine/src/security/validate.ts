@@ -1,10 +1,12 @@
+import { timingSafeEqual } from "node:crypto";
 import type { SandboxConfig, ApiRequest, ApiResponse } from "../types.js";
 import type { EngineConfig } from "../config.js";
 import { resolve, normalize } from "node:path";
 
 export function validatePath(path: string, workspaceDir: string): string {
   const normalized = normalize(resolve(workspaceDir, path));
-  if (!normalized.startsWith(workspaceDir)) {
+  const base = workspaceDir.endsWith("/") ? workspaceDir : workspaceDir + "/";
+  if (normalized !== workspaceDir && !normalized.startsWith(base)) {
     throw new Error(`Path traversal detected: ${path}`);
   }
   return normalized;
@@ -78,7 +80,12 @@ export function checkAuth(
     };
   }
   const token = authHeader.replace("Bearer ", "");
-  if (token !== config.authToken) {
+  const tokenBuf = Buffer.from(token);
+  const expectedBuf = Buffer.from(config.authToken);
+  if (
+    tokenBuf.length !== expectedBuf.length ||
+    !timingSafeEqual(tokenBuf, expectedBuf)
+  ) {
     return { status_code: 403, body: { error: "Invalid token" } };
   }
   return null;
@@ -89,4 +96,32 @@ export function validateCommand(command: string): string[] {
     throw new Error("command is required");
   }
   return ["sh", "-c", command];
+}
+
+const CHMOD_MODE_RE = /^[0-7]{3,4}$/;
+const CHMOD_SYMBOLIC_RE = /^[ugoa]*[+-=][rwxXt]+$/;
+
+export function validateChmodMode(mode: string): string {
+  if (!mode || typeof mode !== "string") {
+    throw new Error("mode is required");
+  }
+  if (!CHMOD_MODE_RE.test(mode) && !CHMOD_SYMBOLIC_RE.test(mode)) {
+    throw new Error(
+      `Invalid chmod mode: ${mode}. Use octal (e.g. 755) or symbolic (e.g. u+x)`,
+    );
+  }
+  return mode;
+}
+
+export function validateSearchPattern(pattern: string): string {
+  if (!pattern || typeof pattern !== "string") {
+    throw new Error("search pattern is required");
+  }
+  if (pattern.length > 200) {
+    throw new Error("search pattern too long (max 200 chars)");
+  }
+  if (/[;\|\$`\\]/.test(pattern)) {
+    throw new Error("search pattern contains invalid characters");
+  }
+  return pattern;
 }

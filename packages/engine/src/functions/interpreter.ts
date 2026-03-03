@@ -2,7 +2,11 @@ import { getContext } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import type { EngineConfig } from "../config.js";
 import { SCOPES } from "../state/schema.js";
-import { execInContainer, getDocker } from "../docker/client.js";
+import {
+  execInContainer,
+  getDocker,
+  copyToContainer,
+} from "../docker/client.js";
 import { getLanguageConfig } from "../interpreter/languages.js";
 import type { Sandbox, CodeResult, KernelSpec } from "../types.js";
 
@@ -26,14 +30,11 @@ export function registerInterpreterFunctions(
       const container = getDocker().getContainer(`iii-sbx-${input.id}`);
 
       const filename = `/tmp/code${lang.fileExtension}`;
-      const writeResult = await execInContainer(
+      await copyToContainer(
         container,
-        ["sh", "-c", `cat > ${filename} << 'CODEEOF'\n${input.code}\nCODEEOF`],
-        10000,
+        filename,
+        Buffer.from(input.code, "utf-8"),
       );
-      if (writeResult.exitCode !== 0) {
-        return { output: "", error: writeResult.stderr, executionTime: 0 };
-      }
 
       const execCmd = getExecCommand(input.language ?? "python", filename);
       const start = Date.now();

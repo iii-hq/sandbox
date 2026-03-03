@@ -148,9 +148,15 @@ export function registerSandboxFunctions(
     async (input: { id: string }): Promise<Sandbox> => {
       const sandbox = await kv.get<Sandbox>(SCOPES.SANDBOXES, input.id);
       if (!sandbox) throw new Error(`Sandbox not found: ${input.id}`);
+      if (sandbox.status !== "running")
+        throw new Error(`Sandbox is not running: ${sandbox.status}`);
 
       const container = getDocker().getContainer(`iii-sbx-${input.id}`);
-      await container.pause();
+      try {
+        await container.pause();
+      } catch (err: any) {
+        throw new Error(`Failed to pause sandbox: ${err.message}`);
+      }
 
       sandbox.status = "paused";
       await kv.set(SCOPES.SANDBOXES, input.id, sandbox);
@@ -163,9 +169,15 @@ export function registerSandboxFunctions(
     async (input: { id: string }): Promise<Sandbox> => {
       const sandbox = await kv.get<Sandbox>(SCOPES.SANDBOXES, input.id);
       if (!sandbox) throw new Error(`Sandbox not found: ${input.id}`);
+      if (sandbox.status !== "paused")
+        throw new Error(`Sandbox is not paused: ${sandbox.status}`);
 
       const container = getDocker().getContainer(`iii-sbx-${input.id}`);
-      await container.unpause();
+      try {
+        await container.unpause();
+      } catch (err: any) {
+        throw new Error(`Failed to resume sandbox: ${err.message}`);
+      }
 
       sandbox.status = "running";
       await kv.set(SCOPES.SANDBOXES, input.id, sandbox);

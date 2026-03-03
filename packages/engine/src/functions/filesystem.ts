@@ -1,4 +1,3 @@
-import { getContext } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import type { EngineConfig } from "../config.js";
 import { SCOPES } from "../state/schema.js";
@@ -11,7 +10,11 @@ import {
   searchInContainer,
   getFileInfo,
 } from "../docker/client.js";
-import { validatePath } from "../security/validate.js";
+import {
+  validatePath,
+  validateChmodMode,
+  validateSearchPattern,
+} from "../security/validate.js";
 import type { Sandbox, FileInfo, FileMetadata } from "../types.js";
 
 export function registerFilesystemFunctions(
@@ -99,6 +102,7 @@ export function registerFilesystemFunctions(
     }): Promise<string[]> => {
       const dir = input.dir ?? config.workspaceDir;
       validatePath(dir, config.workspaceDir);
+      validateSearchPattern(input.pattern);
       const container = await getContainer(input.id);
       return searchInContainer(container, dir, input.pattern);
     },
@@ -213,6 +217,7 @@ export function registerFilesystemFunctions(
       mode: string;
     }): Promise<{ success: boolean }> => {
       validatePath(input.path, config.workspaceDir);
+      validateChmodMode(input.mode);
       const container = await getContainer(input.id);
       const result = await execInContainer(
         container,

@@ -6,10 +6,12 @@ vi.mock("iii-sdk", () => ({
 
 const mockExecInContainer = vi.fn();
 const mockGetDocker = vi.fn();
+const mockCopyToContainer = vi.fn();
 
 vi.mock("../../packages/engine/src/docker/client.js", () => ({
   execInContainer: (...args: any[]) => mockExecInContainer(...args),
   getDocker: () => mockGetDocker(),
+  copyToContainer: (...args: any[]) => mockCopyToContainer(...args),
 }));
 
 import { registerInterpreterFunctions } from "../../packages/engine/src/functions/interpreter.js";
@@ -71,12 +73,17 @@ describe("Interpreter Functions", () => {
       getContainer: (name: string) => ({ id: name }),
     });
 
+    mockExecInContainer.mockReset();
+    mockCopyToContainer.mockReset();
+
     mockExecInContainer.mockResolvedValue({
       exitCode: 0,
       stdout: "output",
       stderr: "",
       duration: 50,
     });
+
+    mockCopyToContainer.mockResolvedValue(undefined);
 
     registerInterpreterFunctions(sdk, kv as any, config);
   });
@@ -91,14 +98,14 @@ describe("Interpreter Functions", () => {
       expect(result.executionTime).toBeGreaterThanOrEqual(0);
     });
 
-    it("writes code to file with correct extension before executing", async () => {
+    it("writes code to file via copyToContainer with correct extension", async () => {
       const execute = handlers.get("interp::execute")!;
       await execute({ id: "sbx_test", code: "print(1)", language: "python" });
 
-      expect(mockExecInContainer).toHaveBeenCalledWith(
+      expect(mockCopyToContainer).toHaveBeenCalledWith(
         expect.anything(),
-        ["sh", "-c", expect.stringContaining("/tmp/code.py")],
-        10000,
+        "/tmp/code.py",
+        Buffer.from("print(1)", "utf-8"),
       );
     });
 
@@ -110,10 +117,10 @@ describe("Interpreter Functions", () => {
         language: "javascript",
       });
 
-      expect(mockExecInContainer).toHaveBeenCalledWith(
+      expect(mockCopyToContainer).toHaveBeenCalledWith(
         expect.anything(),
-        ["sh", "-c", expect.stringContaining("/tmp/code.js")],
-        10000,
+        "/tmp/code.js",
+        Buffer.from("console.log(1)", "utf-8"),
       );
     });
 
@@ -125,10 +132,10 @@ describe("Interpreter Functions", () => {
         language: "typescript",
       });
 
-      expect(mockExecInContainer).toHaveBeenCalledWith(
+      expect(mockCopyToContainer).toHaveBeenCalledWith(
         expect.anything(),
-        ["sh", "-c", expect.stringContaining("/tmp/code.ts")],
-        10000,
+        "/tmp/code.ts",
+        Buffer.from("const x: number = 1", "utf-8"),
       );
     });
 
@@ -136,10 +143,10 @@ describe("Interpreter Functions", () => {
       const execute = handlers.get("interp::execute")!;
       await execute({ id: "sbx_test", code: "package main", language: "go" });
 
-      expect(mockExecInContainer).toHaveBeenCalledWith(
+      expect(mockCopyToContainer).toHaveBeenCalledWith(
         expect.anything(),
-        ["sh", "-c", expect.stringContaining("/tmp/code.go")],
-        10000,
+        "/tmp/code.go",
+        Buffer.from("package main", "utf-8"),
       );
     });
 
@@ -147,43 +154,29 @@ describe("Interpreter Functions", () => {
       const execute = handlers.get("interp::execute")!;
       await execute({ id: "sbx_test", code: "echo hi", language: "bash" });
 
-      expect(mockExecInContainer).toHaveBeenCalledWith(
+      expect(mockCopyToContainer).toHaveBeenCalledWith(
         expect.anything(),
-        ["sh", "-c", expect.stringContaining("/tmp/code.sh")],
-        10000,
+        "/tmp/code.sh",
+        Buffer.from("echo hi", "utf-8"),
       );
     });
 
-    it("returns error when file write fails", async () => {
-      mockExecInContainer.mockResolvedValueOnce({
-        exitCode: 1,
-        stdout: "",
-        stderr: "write error",
-        duration: 5,
-      });
+    it("throws when file write fails", async () => {
+      mockCopyToContainer.mockRejectedValueOnce(new Error("write error"));
 
       const execute = handlers.get("interp::execute")!;
-      const result = await execute({ id: "sbx_test", code: "print(1)" });
-
-      expect(result.output).toBe("");
-      expect(result.error).toBe("write error");
-      expect(result.executionTime).toBe(0);
+      await expect(
+        execute({ id: "sbx_test", code: "print(1)" }),
+      ).rejects.toThrow("write error");
     });
 
     it("returns stderr when execution fails", async () => {
-      mockExecInContainer
-        .mockResolvedValueOnce({
-          exitCode: 0,
-          stdout: "",
-          stderr: "",
-          duration: 5,
-        })
-        .mockResolvedValueOnce({
-          exitCode: 1,
-          stdout: "",
-          stderr: "NameError: x",
-          duration: 20,
-        });
+      mockExecInContainer.mockResolvedValueOnce({
+        exitCode: 1,
+        stdout: "",
+        stderr: "NameError: x",
+        duration: 20,
+      });
 
       const execute = handlers.get("interp::execute")!;
       const result = await execute({ id: "sbx_test", code: "print(x)" });
@@ -192,20 +185,6 @@ describe("Interpreter Functions", () => {
     });
 
     it("uses python3 exec command for python", async () => {
-      mockExecInContainer
-        .mockResolvedValueOnce({
-          exitCode: 0,
-          stdout: "",
-          stderr: "",
-          duration: 5,
-        })
-        .mockResolvedValueOnce({
-          exitCode: 0,
-          stdout: "ok",
-          stderr: "",
-          duration: 10,
-        });
-
       const execute = handlers.get("interp::execute")!;
       await execute({ id: "sbx_test", code: "print(1)", language: "python" });
 
@@ -217,20 +196,6 @@ describe("Interpreter Functions", () => {
     });
 
     it("uses node exec command for javascript", async () => {
-      mockExecInContainer
-        .mockResolvedValueOnce({
-          exitCode: 0,
-          stdout: "",
-          stderr: "",
-          duration: 5,
-        })
-        .mockResolvedValueOnce({
-          exitCode: 0,
-          stdout: "ok",
-          stderr: "",
-          duration: 10,
-        });
-
       const execute = handlers.get("interp::execute")!;
       await execute({
         id: "sbx_test",
@@ -246,20 +211,6 @@ describe("Interpreter Functions", () => {
     });
 
     it("uses npx tsx exec command for typescript", async () => {
-      mockExecInContainer
-        .mockResolvedValueOnce({
-          exitCode: 0,
-          stdout: "",
-          stderr: "",
-          duration: 5,
-        })
-        .mockResolvedValueOnce({
-          exitCode: 0,
-          stdout: "ok",
-          stderr: "",
-          duration: 10,
-        });
-
       const execute = handlers.get("interp::execute")!;
       await execute({
         id: "sbx_test",
@@ -275,20 +226,6 @@ describe("Interpreter Functions", () => {
     });
 
     it("uses go run exec command for go", async () => {
-      mockExecInContainer
-        .mockResolvedValueOnce({
-          exitCode: 0,
-          stdout: "",
-          stderr: "",
-          duration: 5,
-        })
-        .mockResolvedValueOnce({
-          exitCode: 0,
-          stdout: "ok",
-          stderr: "",
-          duration: 10,
-        });
-
       const execute = handlers.get("interp::execute")!;
       await execute({ id: "sbx_test", code: "package main", language: "go" });
 
@@ -300,20 +237,6 @@ describe("Interpreter Functions", () => {
     });
 
     it("uses bash exec command for bash", async () => {
-      mockExecInContainer
-        .mockResolvedValueOnce({
-          exitCode: 0,
-          stdout: "",
-          stderr: "",
-          duration: 5,
-        })
-        .mockResolvedValueOnce({
-          exitCode: 0,
-          stdout: "ok",
-          stderr: "",
-          duration: 10,
-        });
-
       const execute = handlers.get("interp::execute")!;
       await execute({ id: "sbx_test", code: "echo hi", language: "bash" });
 
@@ -325,20 +248,6 @@ describe("Interpreter Functions", () => {
     });
 
     it("defaults to python3 for unknown language", async () => {
-      mockExecInContainer
-        .mockResolvedValueOnce({
-          exitCode: 0,
-          stdout: "",
-          stderr: "",
-          duration: 5,
-        })
-        .mockResolvedValueOnce({
-          exitCode: 0,
-          stdout: "ok",
-          stderr: "",
-          duration: 10,
-        });
-
       const execute = handlers.get("interp::execute")!;
       await execute({ id: "sbx_test", code: "print(1)" });
 
@@ -350,25 +259,10 @@ describe("Interpreter Functions", () => {
     });
 
     it("uses maxCommandTimeout * 1000 for exec timeout", async () => {
-      mockExecInContainer
-        .mockResolvedValueOnce({
-          exitCode: 0,
-          stdout: "",
-          stderr: "",
-          duration: 5,
-        })
-        .mockResolvedValueOnce({
-          exitCode: 0,
-          stdout: "ok",
-          stderr: "",
-          duration: 10,
-        });
-
       const execute = handlers.get("interp::execute")!;
       await execute({ id: "sbx_test", code: "print(1)" });
 
-      expect(mockExecInContainer).toHaveBeenNthCalledWith(
-        2,
+      expect(mockExecInContainer).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
         300000,

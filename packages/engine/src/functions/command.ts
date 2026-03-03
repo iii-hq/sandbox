@@ -39,7 +39,7 @@ export function registerCommandFunctions(
       let command = input.command;
       if (input.cwd) {
         validatePath(input.cwd, config.workspaceDir);
-        command = `cd ${input.cwd} && ${command}`;
+        command = `cd "${input.cwd}" && ${command}`;
       }
       const cmd = validateCommand(command);
       const timeoutMs = Math.min(
@@ -107,7 +107,7 @@ export function registerCommandFunctions(
       res.headers({
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
+        Connection: "keep-alive",
       });
 
       try {
