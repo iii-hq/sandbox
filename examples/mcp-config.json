@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "iii-sandbox": {
+      "command": "npx",
+      "args": ["@iii-sandbox/mcp"],
+      "env": {
+        "III_SANDBOX_URL": "http://localhost:3111"
+      }
+    }
+  }
+}

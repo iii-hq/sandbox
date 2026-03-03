@@ -1,0 +1,31 @@
+{
+  "name": "@iii-sandbox/cli",
+  "version": "0.1.0",
+  "description": "CLI for iii-sandbox — manage Docker sandboxes from terminal",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "iii-sandbox": "dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@iii-sandbox/sdk": "workspace:*",
+    "cac": "^6.7.0"
+  },
+  "devDependencies": {
+    "tsdown": "^0.12.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "license": "Apache-2.0"
+}
