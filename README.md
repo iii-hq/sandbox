@@ -12,20 +12,20 @@ Secure, isolated Docker sandboxes for code execution. Built on [iii-engine](http
   │        REST API  (port 3111)            │
   └────────────────┬────────────────────────┘
                    ▼
-  ┌─────────────────────────────────────────┐
+  ┌──────────────────────────────────────────┐
   │          iii-engine  (Rust)              │
-  │   ┌────────┐ ┌──────┐ ┌────────────┐   │
-  │   │ KV     │ │ Cron │ │ Event Queue│   │
-  │   └────────┘ └──────┘ └────────────┘   │
-  └────────────────┬────────────────────────┘
+  │   ┌────────┐ ┌──────┐ ┌────────────┐     │
+  │   │ KV     │ │ Cron │ │ Event Queue│     │
+  │   └────────┘ └──────┘ └────────────┘     │
+  └────────────────┬─────────────────────────┘
                    ▼
-  ┌─────────────────────────────────────────┐
-  │     Engine Worker  (iii-sdk, Node.js)   │
-  │                                         │
+  ┌──────────────────────────────────────────┐
+  │     Engine Worker  (iii-sdk, Node.js)    │
+  │                                          │
   │  31 Functions · 31 Endpoints · 3 Triggers│
-  │  sandbox · exec · filesystem · interpret│
-  │  background · metrics · ttl · events    │
-  └────────────────┬────────────────────────┘
+  │  sandbox · exec · filesystem · interpret │
+  │  background · metrics · ttl · events     │
+  └────────────────┬─────────────────────────┘
                    ▼
   ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
   │ sbx_01 │ │ sbx_02 │ │ sbx_03 │ │ sbx_04 │
