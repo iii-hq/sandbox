@@ -5,3 +5,14 @@ dist/
 .env.*
 data/
 coverage/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.coverage
+.pytest_cache/
+
+# Rust
+target/
+Cargo.lock
