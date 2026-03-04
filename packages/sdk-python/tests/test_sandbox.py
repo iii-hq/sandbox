@@ -296,11 +296,7 @@ async def test_exec_stream_malformed_json(sandbox):
         chunks = []
         async for chunk in sandbox.exec_stream("echo hi"):
             chunks.append(chunk)
-        assert len(chunks) == 2
-        assert chunks[0].type == "stdout"
-        assert chunks[0].data == "not-valid-json"
-        assert chunks[1].type == "stdout"
-        assert chunks[1].data == "also-bad"
+        assert len(chunks) == 0
 
 
 @pytest.mark.asyncio

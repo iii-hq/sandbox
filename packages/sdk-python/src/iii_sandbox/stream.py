@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import time
 from typing import AsyncGenerator
 
 from .client import HttpClient
@@ -32,11 +31,7 @@ class StreamManager:
                 if event.type == "end":
                     return
             except (json.JSONDecodeError, ValueError, TypeError, KeyError):
-                yield LogEvent(
-                    type="stdout",
-                    data=line,
-                    timestamp=int(time.time() * 1000),
-                )
+                continue
 
     async def metrics(
         self, interval: int | None = None

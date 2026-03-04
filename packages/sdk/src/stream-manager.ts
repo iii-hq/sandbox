@@ -13,10 +13,14 @@ export class StreamManager {
     private sandboxId: string,
   ) {}
 
-  async *logs(options?: { tail?: number; follow?: boolean }): AsyncGenerator<LogEvent> {
+  async *logs(options?: {
+    tail?: number;
+    follow?: boolean;
+  }): AsyncGenerator<LogEvent> {
     const params = new URLSearchParams();
     if (options?.tail !== undefined) params.set("tail", String(options.tail));
-    if (options?.follow !== undefined) params.set("follow", String(options.follow));
+    if (options?.follow !== undefined)
+      params.set("follow", String(options.follow));
     const qs = params.toString();
     const path = `/sandbox/sandboxes/${this.sandboxId}/stream/logs${qs ? `?${qs}` : ""}`;
     const lines = this.client.streamGet(path);
@@ -26,7 +30,7 @@ export class StreamManager {
         yield event;
         if (event.type === "end") return;
       } catch {
-        yield { type: "stdout", data: line, timestamp: Date.now() };
+        continue;
       }
     }
   }

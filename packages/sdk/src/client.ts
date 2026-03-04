@@ -59,16 +59,24 @@ export class HttpClient {
       method: "POST",
       headers: { ...this.headers(), Accept: "text/event-stream" },
       body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(this.timeoutMs),
     });
-    if (!res.ok) throw new Error(`STREAM ${path} failed: ${res.status}`);
+    if (!res.ok)
+      throw new Error(
+        `STREAM ${path} failed: ${res.status} ${await res.text()}`,
+      );
     yield* this.readSSE(res);
   }
 
   async *streamGet(path: string): AsyncGenerator<string> {
     const res = await fetch(`${this.baseUrl}${path}`, {
       headers: { ...this.headers(), Accept: "text/event-stream" },
+      signal: AbortSignal.timeout(this.timeoutMs),
     });
-    if (!res.ok) throw new Error(`STREAM ${path} failed: ${res.status}`);
+    if (!res.ok)
+      throw new Error(
+        `STREAM ${path} failed: ${res.status} ${await res.text()}`,
+      );
     yield* this.readSSE(res);
   }
 
@@ -78,15 +86,19 @@ export class HttpClient {
     const decoder = new TextDecoder();
     let buffer = "";
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (line.startsWith("data: ")) yield line.slice(6);
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (line.startsWith("data: ")) yield line.slice(6);
+        }
       }
+    } finally {
+      reader.cancel().catch(() => {});
     }
   }
 }

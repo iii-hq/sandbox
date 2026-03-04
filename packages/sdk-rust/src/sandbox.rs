@@ -92,13 +92,7 @@ impl Sandbox {
                                     return;
                                 }
                             }
-                            Err(_) => {
-                                yield Ok(ExecStreamChunk {
-                                    chunk_type: "stdout".to_string(),
-                                    data: line,
-                                    timestamp: now_ms(),
-                                });
-                            }
+                            Err(_) => continue,
                         }
                     }
                     Err(e) => {

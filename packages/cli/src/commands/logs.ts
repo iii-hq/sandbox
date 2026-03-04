@@ -3,6 +3,9 @@ import type { ClientConfig } from "@iii-sandbox/sdk"
 
 export async function logsCommand(sandboxId: string, config: ClientConfig) {
   const sbx = await getSandbox(sandboxId, config)
-  const result = await sbx.exec("cat /var/log/*.log 2>/dev/null || echo 'No logs found'")
-  console.log(result.stdout)
+  for await (const event of sbx.streams.logs({ tail: 100, follow: false })) {
+    const prefix = event.type === "stderr" ? "[stderr]" : "[stdout]"
+    process.stdout.write(`${prefix} ${event.data}\n`)
+    if (event.type === "end") break
+  }
 }

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import time
 from typing import AsyncGenerator
 
 from .client import HttpClient
@@ -70,11 +69,7 @@ class Sandbox:
                 if chunk.type == "exit":
                     return
             except (json.JSONDecodeError, ValueError, TypeError, KeyError):
-                yield ExecStreamChunk(
-                    type="stdout",
-                    data=line,
-                    timestamp=int(time.time() * 1000),
-                )
+                continue
 
     async def clone(self, name: str | None = None) -> SandboxInfo:
         body: dict = {}

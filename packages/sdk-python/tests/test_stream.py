@@ -139,9 +139,7 @@ async def test_logs_malformed_json(stream_mgr):
         events = []
         async for event in stream_mgr.logs():
             events.append(event)
-        assert len(events) == 1
-        assert events[0].type == "stdout"
-        assert events[0].data == "not-valid-json"
+        assert len(events) == 0
 
 
 @pytest.mark.asyncio

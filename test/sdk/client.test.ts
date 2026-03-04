@@ -157,12 +157,10 @@ describe("HttpClient", () => {
 
   describe("del", () => {
     it("sends DELETE request", async () => {
-      globalThis.fetch = vi
-        .fn()
-        .mockResolvedValue({
-          ok: true,
-          json: () => Promise.resolve({ success: true }),
-        });
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      });
 
       await client.del("/sandbox/sandboxes/sbx_123");
 
@@ -173,12 +171,10 @@ describe("HttpClient", () => {
     });
 
     it("returns parsed response", async () => {
-      globalThis.fetch = vi
-        .fn()
-        .mockResolvedValue({
-          ok: true,
-          json: () => Promise.resolve({ success: true }),
-        });
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ success: true }),
+      });
 
       const result = await client.del("/sandbox/test");
       expect(result).toEqual({ success: true });
@@ -207,6 +203,7 @@ describe("HttpClient", () => {
             value: new TextEncoder().encode("data: hello\n\n"),
           })
           .mockResolvedValueOnce({ done: true, value: undefined }),
+        cancel: vi.fn().mockResolvedValue(undefined),
       };
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
@@ -229,13 +226,17 @@ describe("HttpClient", () => {
     });
 
     it("throws on non-ok stream response", async () => {
-      globalThis.fetch = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: () => Promise.resolve("internal error"),
+      });
 
       const gen = client.stream("/bad");
       const chunks: string[] = [];
       await expect(async () => {
         for await (const chunk of gen) chunks.push(chunk);
-      }).rejects.toThrow("STREAM /bad failed: 500");
+      }).rejects.toThrow("STREAM /bad failed: 500 internal error");
     });
 
     it("handles multiple SSE lines in single chunk", async () => {
@@ -247,6 +248,7 @@ describe("HttpClient", () => {
             value: new TextEncoder().encode("data: line1\ndata: line2\n"),
           })
           .mockResolvedValueOnce({ done: true, value: undefined }),
+        cancel: vi.fn().mockResolvedValue(undefined),
       };
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,

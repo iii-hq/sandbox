@@ -54,13 +54,7 @@ impl StreamManager {
                                     return;
                                 }
                             }
-                            Err(_) => {
-                                yield Ok(LogEvent {
-                                    event_type: "stdout".to_string(),
-                                    data: line,
-                                    timestamp: chrono_now_ms(),
-                                });
-                            }
+                            Err(_) => continue,
                         }
                     }
                     Err(e) => {
