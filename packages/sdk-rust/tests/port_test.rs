@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use iii_sandbox_sdk::port::PortManager;
-use iii_sandbox_sdk::{ClientConfig, HttpClient};
+use iii_sandbox::port::PortManager;
+use iii_sandbox::{ClientConfig, HttpClient};
 
 fn make_port(url: &str) -> PortManager {
     let client = Arc::new(HttpClient::new(ClientConfig {

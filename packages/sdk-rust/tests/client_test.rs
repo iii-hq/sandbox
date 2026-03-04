@@ -1,4 +1,4 @@
-use iii_sandbox_sdk::{ClientConfig, HttpClient, SandboxError, SandboxInfo};
+use iii_sandbox::{ClientConfig, HttpClient, SandboxError, SandboxInfo};
 
 fn make_client(url: &str) -> HttpClient {
     HttpClient::new(ClientConfig {
@@ -40,7 +40,7 @@ async fn test_get_returns_parsed_json() {
         .await;
 
     let client = make_client(&server.url());
-    let result: iii_sandbox_sdk::SandboxListResponse =
+    let result: iii_sandbox::SandboxListResponse =
         client.get("/sandbox/sandboxes").await.unwrap();
     assert_eq!(result.items.len(), 1);
     assert_eq!(result.items[0].id, "sbx-1");
@@ -106,7 +106,7 @@ async fn test_auth_token_header_is_sent() {
         .await;
 
     let client = make_client_with_token(&server.url(), "my-secret-token");
-    let _result: iii_sandbox_sdk::SandboxListResponse =
+    let _result: iii_sandbox::SandboxListResponse =
         client.get("/sandbox/sandboxes").await.unwrap();
     mock.assert_async().await;
 }

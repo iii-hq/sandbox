@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use iii_sandbox_sdk::git::{
+use iii_sandbox::git::{
     GitBranchOptions, GitCloneOptions, GitCommitOptions, GitDiffOptions, GitLogOptions, GitManager,
     GitPullOptions, GitPushOptions,
 };
-use iii_sandbox_sdk::{ClientConfig, HttpClient};
+use iii_sandbox::{ClientConfig, HttpClient};
 
 fn make_git(url: &str) -> GitManager {
     let client = Arc::new(HttpClient::new(ClientConfig {

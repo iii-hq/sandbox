@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use iii_sandbox_sdk::events::EventHistoryOptions;
-use iii_sandbox_sdk::observability::TraceOptions;
-use iii_sandbox_sdk::{
+use iii_sandbox::events::EventHistoryOptions;
+use iii_sandbox::observability::TraceOptions;
+use iii_sandbox::{
     ClientConfig, EventManager, HttpClient, NetworkManager, ObservabilityClient, VolumeManager,
 };
 

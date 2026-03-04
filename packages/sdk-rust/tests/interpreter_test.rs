@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use iii_sandbox_sdk::interpreter::CodeInterpreter;
-use iii_sandbox_sdk::{ClientConfig, HttpClient};
+use iii_sandbox::interpreter::CodeInterpreter;
+use iii_sandbox::{ClientConfig, HttpClient};
 
 fn make_interpreter(url: &str) -> CodeInterpreter {
     let client = Arc::new(HttpClient::new(ClientConfig {

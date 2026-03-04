@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use iii_sandbox_sdk::{ClientConfig, HttpClient, Sandbox, SandboxInfo};
+use iii_sandbox::{ClientConfig, HttpClient, Sandbox, SandboxInfo};
 
 fn make_sandbox(url: &str) -> Sandbox {
     let client = Arc::new(HttpClient::new(ClientConfig {

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use iii_sandbox_sdk::monitor::MonitorManager;
-use iii_sandbox_sdk::{ClientConfig, HttpClient};
+use iii_sandbox::monitor::MonitorManager;
+use iii_sandbox::{ClientConfig, HttpClient};
 
 fn make_monitor(url: &str) -> MonitorManager {
     let client = Arc::new(HttpClient::new(ClientConfig {

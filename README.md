@@ -73,7 +73,7 @@ pnpm build
 | `@iii-sandbox/engine` | Worker with 89 functions, Docker integration, security | `packages/engine` |
 | `@iii-sandbox/sdk` | Zero-dependency client library for Node.js | `packages/sdk` |
 | `iii-sandbox` (Python) | Async Python client (httpx + pydantic) | `packages/sdk-python` |
-| `iii-sandbox-sdk` (Rust) | Async Rust client (reqwest + serde) | `packages/sdk-rust` |
+| `iii-sandbox` (Rust) | Async Rust client (reqwest + serde) | `packages/sdk-rust` |
 | `@iii-sandbox/cli` | Command-line interface (11 commands) | `packages/cli` |
 | `@iii-sandbox/mcp` | MCP server with 44 AI tools | `packages/mcp` |
 
@@ -189,13 +189,13 @@ await sbx.kill()
 ```toml
 # Cargo.toml
 [dependencies]
-iii-sandbox-sdk = "0.1"
+iii-sandbox = "0.1"
 tokio = { version = "1", features = ["full"] }
 futures-util = "0.3"
 ```
 
 ```rust
-use iii_sandbox_sdk::{create_sandbox, list_sandboxes, SandboxCreateOptions, ClientConfig};
+use iii_sandbox::{create_sandbox, list_sandboxes, SandboxCreateOptions, ClientConfig};
 use futures_util::StreamExt;
 
 let options = SandboxCreateOptions {
@@ -629,7 +629,7 @@ iii-sandbox/
 │   │   └── src/              15 modules (client, sandbox, 13 managers)
 │   ├── sdk-python/       Python client library (httpx + pydantic)
 │   │   ├── src/iii_sandbox/  17 modules (client, sandbox, types, 14 managers)
-│   │   └── tests/            13 test files (104 tests)
+│   │   └── tests/            15 test files (150 tests)
 │   ├── sdk-rust/         Rust client library (reqwest + serde)
 │   │   └── src/              18 modules (client, sandbox, types, error, 14 managers)
 │   ├── cli/              Command-line interface

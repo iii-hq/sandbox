@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use iii_sandbox_sdk::filesystem::FileSystem;
-use iii_sandbox_sdk::{ClientConfig, HttpClient};
+use iii_sandbox::filesystem::FileSystem;
+use iii_sandbox::{ClientConfig, HttpClient};
 
 fn make_fs(url: &str) -> FileSystem {
     let client = Arc::new(HttpClient::new(ClientConfig {

@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use iii_sandbox_sdk::env::EnvManager;
-use iii_sandbox_sdk::{ClientConfig, HttpClient};
+use iii_sandbox::env::EnvManager;
+use iii_sandbox::{ClientConfig, HttpClient};
 
 fn make_env(url: &str) -> EnvManager {
     let client = Arc::new(HttpClient::new(ClientConfig {

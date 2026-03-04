@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use iii_sandbox_sdk::queue::{QueueManager, QueueSubmitOptions};
-use iii_sandbox_sdk::{ClientConfig, HttpClient};
+use iii_sandbox::queue::{QueueManager, QueueSubmitOptions};
+use iii_sandbox::{ClientConfig, HttpClient};
 
 fn make_queue(url: &str) -> QueueManager {
     let client = Arc::new(HttpClient::new(ClientConfig {

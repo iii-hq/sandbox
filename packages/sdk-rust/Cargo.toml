@@ -1,5 +1,5 @@
 [package]
-name = "iii-sandbox-sdk"
+name = "iii-sandbox"
 version = "0.1.0"
 edition = "2021"
 description = "Rust SDK for iii-sandbox"

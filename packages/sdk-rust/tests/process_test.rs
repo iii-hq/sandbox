@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use iii_sandbox_sdk::process::ProcessManager;
-use iii_sandbox_sdk::{ClientConfig, HttpClient};
+use iii_sandbox::process::ProcessManager;
+use iii_sandbox::{ClientConfig, HttpClient};
 
 fn make_process(url: &str) -> ProcessManager {
     let client = Arc::new(HttpClient::new(ClientConfig {
