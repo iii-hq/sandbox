@@ -96,6 +96,7 @@ describe("Stream Functions", () => {
       registerFunction: vi.fn((meta: any, handler: Function) => {
         handlers.set(meta.id, handler);
       }),
+      registerTrigger: vi.fn(),
     };
 
     const mockLogStream = {
@@ -286,26 +287,30 @@ describe("Stream Functions", () => {
       const { req, response } = makeStreamReq();
       const handler = handlers.get("stream::events")!;
       await handler(req);
-      await vi.advanceTimersByTimeAsync(0);
 
       expect(response.sendMessage).toHaveBeenCalledWith(
         expect.stringContaining('"text/event-stream"'),
       );
     });
 
-    it("streams new events as SSE", async () => {
-      eventStore.push({
+    it("streams events via registered handler", async () => {
+      const { req, streamWritable } = makeStreamReq();
+      const handler = handlers.get("stream::events")!;
+      await handler(req);
+
+      const eventHandlerKey = Array.from(handlers.keys()).find((k) =>
+        k.startsWith("stream-events-"),
+      );
+      expect(eventHandlerKey).toBeDefined();
+
+      const eventHandler = handlers.get(eventHandlerKey!)!;
+      await eventHandler({
         id: "evt_1",
         topic: "sandbox.created",
         sandboxId: "sbx_test",
         data: {},
         timestamp: Date.now() + 1000,
       });
-
-      const { req, streamWritable } = makeStreamReq();
-      const handler = handlers.get("stream::events")!;
-      await handler(req);
-      await vi.advanceTimersByTimeAsync(0);
 
       const writes = streamWritable.write.mock.calls;
       const hasEvent = writes.some(([data]: [string]) =>
@@ -315,27 +320,31 @@ describe("Stream Functions", () => {
     });
 
     it("filters events by topic", async () => {
-      eventStore.push({
+      const { req, streamWritable } = makeStreamReq({
+        query_params: { topic: "sandbox.created" },
+      });
+      const handler = handlers.get("stream::events")!;
+      await handler(req);
+
+      const eventHandlerKey = Array.from(handlers.keys()).find((k) =>
+        k.startsWith("stream-events-"),
+      );
+      const eventHandler = handlers.get(eventHandlerKey!)!;
+
+      await eventHandler({
         id: "evt_1",
         topic: "sandbox.created",
         sandboxId: "sbx_test",
         data: {},
         timestamp: Date.now() + 1000,
       });
-      eventStore.push({
+      await eventHandler({
         id: "evt_2",
         topic: "sandbox.killed",
         sandboxId: "sbx_test",
         data: {},
         timestamp: Date.now() + 2000,
       });
-
-      const { req, streamWritable } = makeStreamReq({
-        query_params: { topic: "sandbox.created" },
-      });
-      const handler = handlers.get("stream::events")!;
-      await handler(req);
-      await vi.advanceTimersByTimeAsync(0);
 
       const writes = streamWritable.write.mock.calls;
       const hasCreated = writes.some(([data]: [string]) =>

@@ -72,6 +72,8 @@ pnpm build
 |---------|-------------|-------|
 | `@iii-sandbox/engine` | Worker with 89 functions, Docker integration, security | `packages/engine` |
 | `@iii-sandbox/sdk` | Zero-dependency client library for Node.js | `packages/sdk` |
+| `iii-sandbox` (Python) | Async Python client (httpx + pydantic) | `packages/sdk-python` |
+| `iii-sandbox` (Rust) | Async Rust client (reqwest + serde) | `packages/sdk-rust` |
 | `@iii-sandbox/cli` | Command-line interface (11 commands) | `packages/cli` |
 | `@iii-sandbox/mcp` | MCP server with 44 AI tools | `packages/mcp` |
 
@@ -139,6 +141,97 @@ import { getSandbox, listSandboxes } from "@iii-sandbox/sdk"
 
 const all = await listSandboxes()
 const sbx = await getSandbox("sbx_a1b2c3d4e5f6")
+```
+
+### Python SDK
+
+```bash
+pip install iii-sandbox
+```
+
+```python
+from iii_sandbox import create_sandbox, list_sandboxes, get_sandbox
+
+sbx = await create_sandbox(image="python:3.12-slim")
+
+result = await sbx.exec("python3 --version")
+print(result.stdout)
+
+await sbx.filesystem.write("/workspace/app.py", "print('hello')")
+content = await sbx.filesystem.read("/workspace/app.py")
+files = await sbx.filesystem.list("/workspace")
+
+py = await sbx.interpreter.run("print(sum(range(100)))", "python")
+print(py.output)
+
+await sbx.env.set({"API_KEY": "sk-123"})
+val = await sbx.env.get("API_KEY")
+
+await sbx.git.clone("https://github.com/user/repo.git")
+status = await sbx.git.status()
+
+async for chunk in sbx.exec_stream("ls -la"):
+    print(f"[{chunk.type}] {chunk.data}")
+
+async for log in sbx.streams.logs(follow=True):
+    print(log.data)
+
+snap = await sbx.snapshot()
+await sbx.restore(snap.id)
+
+await sbx.pause()
+await sbx.resume()
+await sbx.kill()
+```
+
+### Rust SDK
+
+```toml
+# Cargo.toml
+[dependencies]
+iii-sandbox = "0.1"
+tokio = { version = "1", features = ["full"] }
+futures-util = "0.3"
+```
+
+```rust
+use iii_sandbox::{create_sandbox, list_sandboxes, SandboxCreateOptions, ClientConfig};
+use futures_util::StreamExt;
+
+let options = SandboxCreateOptions {
+    image: Some("python:3.12-slim".into()),
+    ..Default::default()
+};
+let sbx = create_sandbox(options, None).await?;
+
+let result = sbx.exec("python3 --version", None).await?;
+println!("{}", result.stdout);
+
+sbx.filesystem.write("/workspace/app.py", "print('hello')").await?;
+let content = sbx.filesystem.read("/workspace/app.py").await?;
+let files = sbx.filesystem.list(Some("/workspace")).await?;
+
+let py = sbx.interpreter.run("print(sum(range(100)))", Some("python")).await?;
+println!("{}", py.output);
+
+let mut vars = std::collections::HashMap::new();
+vars.insert("API_KEY".into(), "sk-123".into());
+sbx.env.set(vars).await?;
+
+sbx.git.clone_repo("https://github.com/user/repo.git", None).await?;
+let status = sbx.git.status(None).await?;
+
+let mut stream = sbx.exec_stream("ls -la");
+while let Some(Ok(chunk)) = stream.next().await {
+    println!("[{}] {}", chunk.r#type, chunk.data);
+}
+
+let snap = sbx.snapshot(None).await?;
+sbx.restore(&snap.id).await?;
+
+sbx.pause().await?;
+sbx.resume().await?;
+sbx.kill().await?;
 ```
 
 ### Configuration
@@ -532,23 +625,13 @@ iii-sandbox/
 │   │       ├── state/        KV wrapper + schema (12 scopes)
 │   │       ├── security/     Path traversal, auth, validation
 │   │       └── interpreter/  Language configurations
-│   ├── sdk/              Zero-dependency client library
-│   │   └── src/
-│   │       ├── client.ts       HTTP + SSE streaming
-│   │       ├── sandbox.ts      Sandbox class
-│   │       ├── filesystem.ts   FileSystem class
-│   │       ├── interpreter.ts  CodeInterpreter class
-│   │       ├── env.ts          EnvManager class
-│   │       ├── git.ts          GitManager class
-│   │       ├── process.ts      ProcessManager class
-│   │       ├── port.ts         PortManager class
-│   │       ├── events.ts       EventManager class
-│   │       ├── queue.ts        QueueManager class
-│   │       ├── network.ts      NetworkManager class
-│   │       ├── observability.ts ObservabilityClient class
-│   │       ├── stream-manager.ts StreamManager class
-│   │       ├── monitor.ts      MonitorManager class
-│   │       └── volume.ts       VolumeManager class
+│   ├── sdk/              TypeScript client library (zero-dep)
+│   │   └── src/              15 modules (client, sandbox, 13 managers)
+│   ├── sdk-python/       Python client library (httpx + pydantic)
+│   │   ├── src/iii_sandbox/  17 modules (client, sandbox, types, 14 managers)
+│   │   └── tests/            15 test files (150 tests)
+│   ├── sdk-rust/         Rust client library (reqwest + serde)
+│   │   └── src/              18 modules (client, sandbox, types, error, 14 managers)
 │   ├── cli/              Command-line interface
 │   │   └── src/
 │   │       ├── index.ts      CLI router (cac)

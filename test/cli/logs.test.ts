@@ -14,52 +14,56 @@ const mockGetSandbox = vi.mocked(getSandbox)
 describe("logsCommand", () => {
   const config = { baseUrl: "http://localhost:3000", token: "test-token" }
   let mockSandbox: any
+  let writeSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
     vi.restoreAllMocks()
-    vi.spyOn(console, "log").mockImplementation(() => {})
+    writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
 
     mockSandbox = {
-      exec: vi.fn(),
+      streams: {
+        logs: vi.fn(),
+      },
     }
     mockGetSandbox.mockResolvedValue(mockSandbox)
   })
 
   it("gets the sandbox by id", async () => {
-    mockSandbox.exec.mockResolvedValue({ stdout: "" })
+    mockSandbox.streams.logs.mockReturnValue((async function* () {})())
 
     await logsCommand("sbx-123", config)
 
     expect(mockGetSandbox).toHaveBeenCalledWith("sbx-123", config)
   })
 
-  it("executes the log reading command", async () => {
-    mockSandbox.exec.mockResolvedValue({ stdout: "" })
+  it("calls streams.logs with tail and follow options", async () => {
+    mockSandbox.streams.logs.mockReturnValue((async function* () {})())
 
     await logsCommand("sbx-123", config)
 
-    expect(mockSandbox.exec).toHaveBeenCalledWith(
-      "cat /var/log/*.log 2>/dev/null || echo 'No logs found'",
-    )
+    expect(mockSandbox.streams.logs).toHaveBeenCalledWith({ tail: 100, follow: false })
   })
 
-  it("prints log output", async () => {
-    mockSandbox.exec.mockResolvedValue({
-      stdout: "2026-03-03 error: something failed\n2026-03-03 info: service started\n",
-    })
+  it("prints log output with type prefix", async () => {
+    mockSandbox.streams.logs.mockReturnValue(
+      (async function* () {
+        yield { type: "stdout", data: "service started", timestamp: 1000 }
+        yield { type: "stderr", data: "warning: low memory", timestamp: 1001 }
+        yield { type: "end", data: "", timestamp: 1002 }
+      })(),
+    )
 
     await logsCommand("sbx-123", config)
 
-    expect(console.log).toHaveBeenCalledWith(
-      "2026-03-03 error: something failed\n2026-03-03 info: service started\n",
-    )
+    expect(writeSpy).toHaveBeenCalledWith("[stdout] service started\n")
+    expect(writeSpy).toHaveBeenCalledWith("[stderr] warning: low memory\n")
   })
 
-  it("prints empty string when no logs", async () => {
-    mockSandbox.exec.mockResolvedValue({ stdout: "No logs found\n" })
+  it("handles empty log stream", async () => {
+    mockSandbox.streams.logs.mockReturnValue((async function* () {})())
 
     await logsCommand("sbx-123", config)
 
-    expect(console.log).toHaveBeenCalledWith("No logs found\n")
+    expect(writeSpy).not.toHaveBeenCalled()
   })
 })

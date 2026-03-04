@@ -42,22 +42,26 @@ export function registerPortFunctions(
       if (protocol !== "tcp" && protocol !== "udp")
         throw new Error(`Invalid protocol: ${protocol}`);
 
-      const existing: PortMapping[] = sandbox.metadata.ports
-        ? JSON.parse(sandbox.metadata.ports)
-        : [];
+      let existing: PortMapping[] = [];
+      if (sandbox.metadata.ports) {
+        try {
+          existing = JSON.parse(sandbox.metadata.ports);
+        } catch {
+          existing = [];
+        }
+      }
 
       const duplicate = existing.find(
         (p) =>
           p.containerPort === input.containerPort && p.protocol === protocol,
       );
-      if (duplicate) throw new Error(`Port ${input.containerPort}/${protocol} already exposed`);
+      if (duplicate)
+        throw new Error(
+          `Port ${input.containerPort}/${protocol} already exposed`,
+        );
 
       let hostPort = input.hostPort ?? input.containerPort;
-      if (
-        !Number.isInteger(hostPort) ||
-        hostPort < 1 ||
-        hostPort > 65535
-      )
+      if (!Number.isInteger(hostPort) || hostPort < 1 || hostPort > 65535)
         throw new Error(`Invalid host port: ${hostPort}`);
 
       let state: "mapped" | "active" = "mapped";
@@ -103,9 +107,14 @@ export function registerPortFunctions(
       const sandbox = await kv.get<Sandbox>(SCOPES.SANDBOXES, input.id);
       if (!sandbox) throw new Error(`Sandbox not found: ${input.id}`);
 
-      const stored: PortMapping[] = sandbox.metadata.ports
-        ? JSON.parse(sandbox.metadata.ports)
-        : [];
+      let stored: PortMapping[] = [];
+      if (sandbox.metadata.ports) {
+        try {
+          stored = JSON.parse(sandbox.metadata.ports);
+        } catch {
+          stored = [];
+        }
+      }
 
       try {
         const container = getDocker().getContainer(`iii-sbx-${input.id}`);
@@ -131,7 +140,10 @@ export function registerPortFunctions(
   );
 
   sdk.registerFunction(
-    { id: "port::unexpose", description: "Remove a port mapping from a sandbox" },
+    {
+      id: "port::unexpose",
+      description: "Remove a port mapping from a sandbox",
+    },
     async (input: {
       id: string;
       containerPort: number;
@@ -140,18 +152,21 @@ export function registerPortFunctions(
       const sandbox = await kv.get<Sandbox>(SCOPES.SANDBOXES, input.id);
       if (!sandbox) throw new Error(`Sandbox not found: ${input.id}`);
 
-      const existing: PortMapping[] = sandbox.metadata.ports
-        ? JSON.parse(sandbox.metadata.ports)
-        : [];
+      let existing: PortMapping[] = [];
+      if (sandbox.metadata.ports) {
+        try {
+          existing = JSON.parse(sandbox.metadata.ports);
+        } catch {
+          existing = [];
+        }
+      }
 
       const filtered = existing.filter(
         (p) => p.containerPort !== input.containerPort,
       );
 
       if (filtered.length === existing.length)
-        throw new Error(
-          `Port ${input.containerPort} is not exposed`,
-        );
+        throw new Error(`Port ${input.containerPort} is not exposed`);
 
       sandbox.metadata.ports = JSON.stringify(filtered);
       await kv.set(SCOPES.SANDBOXES, input.id, sandbox);

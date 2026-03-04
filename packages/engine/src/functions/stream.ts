@@ -89,10 +89,16 @@ export function registerStreamFunctions(
           });
 
           logStream.on("error", () => {
+            if (typeof logStream.destroy === "function") logStream.destroy();
             res.close();
           });
+
+          req.on?.("close", () => {
+            if (typeof logStream.destroy === "function") logStream.destroy();
+          });
         } else {
-          const output = typeof logStream === "string" ? logStream : logStream.toString();
+          const output =
+            typeof logStream === "string" ? logStream : logStream.toString();
           const lines = output.split("\n").filter(Boolean);
           for (const line of lines) {
             const header = line.charCodeAt(0);
@@ -110,7 +116,8 @@ export function registerStreamFunctions(
           );
           res.close();
         }
-      } catch {
+      } catch (err: any) {
+        ctx.logger.error("Log stream error", { id, error: err?.message });
         res.close();
       }
     }),
@@ -208,27 +215,53 @@ export function registerStreamFunctions(
       let lastTimestamp = Date.now();
       let stopped = false;
 
-      const poll = async () => {
-        if (stopped) return;
-        try {
-          let events = await kv.list<SandboxEvent>(SCOPES.EVENTS);
-          events = events.filter((e) => e.timestamp > lastTimestamp);
-          if (topic) events = events.filter((e) => e.topic === topic);
-          events.sort((a, b) => a.timestamp - b.timestamp);
-
-          for (const event of events) {
+      const handlerId = `stream-events-${Date.now()}`;
+      sdk.registerFunction(
+        { id: handlerId },
+        async (data: Record<string, unknown>) => {
+          if (stopped) return;
+          const event = data as unknown as SandboxEvent;
+          if (topic && event.topic !== topic) return;
+          try {
             res.stream.write(`data: ${JSON.stringify(event)}\n\n`);
             lastTimestamp = event.timestamp;
+          } catch {
+            stopped = true;
           }
-        } catch {
-          stopped = true;
-          res.close();
-          return;
-        }
-        if (!stopped) timer = setTimeout(poll, 2000);
-      };
+        },
+      );
 
-      let timer: ReturnType<typeof setTimeout> = setTimeout(poll, 0);
+      const subscribeTopic = topic ?? "sandbox.*";
+      try {
+        sdk.registerTrigger({
+          type: "queue",
+          function_id: handlerId,
+          config: { topic: subscribeTopic },
+        });
+      } catch {
+        // fallback: poll KV if trigger registration fails
+        const poll = async () => {
+          if (stopped) return;
+          try {
+            let events = await kv.list<SandboxEvent>(SCOPES.EVENTS);
+            events = events.filter((e) => e.timestamp > lastTimestamp);
+            if (topic) events = events.filter((e) => e.topic === topic);
+            events.sort((a, b) => a.timestamp - b.timestamp);
+            for (const event of events) {
+              res.stream.write(`data: ${JSON.stringify(event)}\n\n`);
+              lastTimestamp = event.timestamp;
+            }
+          } catch {
+            stopped = true;
+            res.close();
+            return;
+          }
+          if (!stopped) timer = setTimeout(poll, 2000);
+        };
+        timer = setTimeout(poll, 0);
+      }
+
+      let timer: ReturnType<typeof setTimeout>;
 
       req.on?.("close", () => {
         stopped = true;
