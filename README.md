@@ -3,11 +3,13 @@
 Secure, isolated Docker sandboxes for code execution. Built on [iii-engine](https://github.com/iii-hq/iii) primitives (Worker / Function / Trigger).
 
 ```
-         ┌───────┐ ┌───────┐ ┌───────┐
-         │  SDK  │ │  CLI  │ │  MCP  │
-         └──┬────┘ └──┬────┘ └──┬────┘
-            └─────────┼─────────┘
-                      ▼
+  ┌──────────┐ ┌──────────┐ ┌──────────┐
+  │ SDK (TS) │ │SDK (Rust)│ │SDK (Py)  │
+  └────┬─────┘ └────┬─────┘ └────┬─────┘
+       └─────────────┼─────────────┘
+  ┌───────┐          │          ┌───────┐
+  │  CLI  │──────────┼──────────│  MCP  │
+  └───────┘          ▼          └───────┘
   ┌─────────────────────────────────────────┐
   │        REST API  (port 3111)            │
   └────────────────┬────────────────────────┘
@@ -22,7 +24,7 @@ Secure, isolated Docker sandboxes for code execution. Built on [iii-engine](http
   ┌─────────────────────────────────────────┐
   │     Engine Worker  (iii-sdk, Node.js)   │
   │                                         │
-  │  89 Functions · 85 Endpoints · 44 Tools │
+  │  90 Functions · 86 Endpoints · 44 Tools │
   │  sandbox · exec · fs · git · env · proc │
   │  snapshot · template · port · queue     │
   │  event · stream · monitor · volume · net│
@@ -70,7 +72,7 @@ pnpm build
 
 | Package | Description | Entry |
 |---------|-------------|-------|
-| `@iii-sandbox/engine` | Worker with 89 functions, Docker integration, security | `packages/engine` |
+| `@iii-sandbox/engine` | Worker with 90 functions, Docker integration, security | `packages/engine` |
 | `@iii-sandbox/sdk` | Zero-dependency client library for Node.js | `packages/sdk` |
 | `iii-sandbox` (Python) | Async Python client (httpx + pydantic) | `packages/sdk-python` |
 | `iii-sandbox` (Rust) | Async Rust client (reqwest + serde) | `packages/sdk-rust` |
@@ -500,7 +502,7 @@ Connect any AI agent (Claude, Cursor, etc.) to sandboxes via Model Context Proto
 
 ## Engine Architecture
 
-The engine registers **89 iii-engine functions** across 20 modules:
+The engine registers **90 iii-engine functions** across 20 modules:
 
 ```
 functions/
@@ -527,7 +529,7 @@ functions/
 ```
 
 **3 trigger types**:
-- **HTTP** — 85 REST endpoints on port 3111
+- **HTTP** — 86 REST endpoints on port 3111
 - **Cron** — TTL sweep every 30 seconds (expires idle sandboxes)
 - **Events** — `sandbox.created`, `sandbox.killed`, `sandbox.expired` queue events
 
@@ -616,7 +618,7 @@ modules:
 ```
 iii-sandbox/
 ├── packages/
-│   ├── engine/           iii-engine worker (89 functions, Docker integration)
+│   ├── engine/           iii-engine worker (90 functions, Docker integration)
 │   │   └── src/
 │   │       ├── docker/       Container management + streaming
 │   │       ├── functions/    20 function modules
@@ -640,7 +642,7 @@ iii-sandbox/
 │       └── src/
 │           ├── server.ts     Tool registration
 │           └── tools.ts      Zod schemas
-├── test/                 1161 tests across 72 files
+├── test/                 1161 TypeScript tests across 72 files
 ├── examples/             Runnable examples
 └── iii-config.yaml       Engine configuration
 ```
@@ -651,13 +653,24 @@ iii-sandbox/
 pnpm install          # Install dependencies
 pnpm build            # Build all packages
 pnpm dev              # Start engine worker (dev mode)
-pnpm test             # Run all 1161 tests
+pnpm test             # Run TypeScript tests (1161)
 pnpm lint             # TypeScript type checking
+
+cd packages/sdk-python && pip install -e ".[dev]" && pytest   # Python tests (150)
+cd packages/sdk-rust && cargo test                             # Rust tests (99)
 ```
 
 ### Test Suite
 
-72 test files organized by category:
+**1,410 total tests** across TypeScript, Python, and Rust:
+
+| Language | Files | Tests | Tool |
+|----------|-------|-------|------|
+| TypeScript | 72 | 1,161 | vitest |
+| Python | 15 | 150 | pytest + respx |
+| Rust | 11 | 99 | cargo test + mockito |
+
+TypeScript tests by category:
 
 | Category | Files | Tests | Coverage |
 |----------|-------|-------|----------|
