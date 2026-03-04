@@ -4,21 +4,43 @@ import type {
   ExecResult,
   ExecStreamChunk,
   SandboxMetrics,
+  SnapshotInfo,
 } from "./types.js";
+import { EnvManager } from "./env.js";
 import { FileSystem } from "./filesystem.js";
+import { GitManager } from "./git.js";
 import { CodeInterpreter } from "./interpreter.js";
+import { ProcessManager } from "./process.js";
+import { PortManager } from "./port.js";
+import { QueueManager } from "./queue.js";
+import { StreamManager } from "./stream-manager.js";
+import { MonitorManager } from "./monitor.js";
 import { parseExecStream } from "./stream.js";
 
 export class Sandbox {
+  readonly env: EnvManager;
   readonly filesystem: FileSystem;
+  readonly git: GitManager;
   readonly interpreter: CodeInterpreter;
+  readonly processes: ProcessManager;
+  readonly ports: PortManager;
+  readonly queue: QueueManager;
+  readonly streams: StreamManager;
+  readonly monitor: MonitorManager;
 
   constructor(
     private client: HttpClient,
     public info: SandboxInfo,
   ) {
+    this.env = new EnvManager(client, info.id);
     this.filesystem = new FileSystem(client, info.id);
+    this.git = new GitManager(client, info.id);
     this.interpreter = new CodeInterpreter(client, info.id);
+    this.processes = new ProcessManager(client, info.id);
+    this.ports = new PortManager(client, info.id);
+    this.queue = new QueueManager(client, info.id);
+    this.streams = new StreamManager(client, info.id);
+    this.monitor = new MonitorManager(client, info.id);
   }
 
   get id(): string {
@@ -44,6 +66,13 @@ export class Sandbox {
     yield* parseExecStream(lines);
   }
 
+  async clone(name?: string): Promise<SandboxInfo> {
+    return this.client.post<SandboxInfo>(
+      `/sandbox/sandboxes/${this.info.id}/clone`,
+      { name },
+    );
+  }
+
   async pause(): Promise<void> {
     await this.client.post(`/sandbox/sandboxes/${this.info.id}/pause`);
   }
@@ -59,6 +88,26 @@ export class Sandbox {
   async metrics(): Promise<SandboxMetrics> {
     return this.client.get<SandboxMetrics>(
       `/sandbox/sandboxes/${this.info.id}/metrics`,
+    );
+  }
+
+  async snapshot(name?: string): Promise<SnapshotInfo> {
+    return this.client.post<SnapshotInfo>(
+      `/sandbox/sandboxes/${this.info.id}/snapshots`,
+      { name },
+    );
+  }
+
+  async restore(snapshotId: string): Promise<SandboxInfo> {
+    return this.client.post<SandboxInfo>(
+      `/sandbox/sandboxes/${this.info.id}/snapshots/restore`,
+      { snapshotId },
+    );
+  }
+
+  async listSnapshots(): Promise<{ snapshots: SnapshotInfo[] }> {
+    return this.client.get<{ snapshots: SnapshotInfo[] }>(
+      `/sandbox/sandboxes/${this.info.id}/snapshots`,
     );
   }
 

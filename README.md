@@ -19,13 +19,14 @@ Secure, isolated Docker sandboxes for code execution. Built on [iii-engine](http
   │   └────────┘ └──────┘ └────────────┘     │
   └────────────────┬─────────────────────────┘
                    ▼
-  ┌──────────────────────────────────────────┐
-  │     Engine Worker  (iii-sdk, Node.js)    │
-  │                                          │
-  │  31 Functions · 31 Endpoints · 3 Triggers│
-  │  sandbox · exec · filesystem · interpret │
-  │  background · metrics · ttl · events     │
-  └────────────────┬─────────────────────────┘
+  ┌─────────────────────────────────────────┐
+  │     Engine Worker  (iii-sdk, Node.js)   │
+  │                                         │
+  │  89 Functions · 85 Endpoints · 44 Tools │
+  │  sandbox · exec · fs · git · env · proc │
+  │  snapshot · template · port · queue     │
+  │  event · stream · monitor · volume · net│
+  └────────────────┬────────────────────────┘
                    ▼
   ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
   │ sbx_01 │ │ sbx_02 │ │ sbx_03 │ │ sbx_04 │
@@ -59,8 +60,8 @@ curl -X POST http://localhost:3111/sandbox/sandboxes/<id>/exec \
 ## Installation
 
 ```bash
-git clone https://github.com/rohitg00/iii-sandbox.git
-cd iii-sandbox
+git clone https://github.com/iii-hq/sandbox.git
+cd sandbox
 pnpm install
 pnpm build
 ```
@@ -69,10 +70,10 @@ pnpm build
 
 | Package | Description | Entry |
 |---------|-------------|-------|
-| `@iii-sandbox/engine` | Worker with 31 functions, Docker integration, security | `packages/engine` |
+| `@iii-sandbox/engine` | Worker with 89 functions, Docker integration, security | `packages/engine` |
 | `@iii-sandbox/sdk` | Zero-dependency client library for Node.js | `packages/sdk` |
 | `@iii-sandbox/cli` | Command-line interface (11 commands) | `packages/cli` |
-| `@iii-sandbox/mcp` | MCP server with 10 AI tools | `packages/mcp` |
+| `@iii-sandbox/mcp` | MCP server with 44 AI tools | `packages/mcp` |
 
 ## SDK Usage
 
@@ -103,6 +104,28 @@ console.log(py.output)  // "4950"
 const metrics = await sbx.metrics()
 console.log(`CPU: ${metrics.cpuPercent}%, Memory: ${metrics.memoryUsageMb}MB`)
 
+// Environment variables
+await sbx.env.set("API_KEY", "sk-123")
+const val = await sbx.env.get("API_KEY")
+const allEnv = await sbx.env.list()
+
+// Git operations
+await sbx.git.clone("https://github.com/user/repo.git")
+const status = await sbx.git.status()
+await sbx.git.commit("Initial commit", { all: true })
+
+// Process management
+const procs = await sbx.processes.list()
+await sbx.processes.kill(1234, "TERM")
+
+// Snapshots
+const snap = await sbx.snapshot()
+await sbx.restore(snap.snapshotId)
+
+// Port forwarding
+await sbx.ports.expose(8080, 3000)
+const ports = await sbx.ports.list()
+
 // Lifecycle
 await sbx.pause()
 await sbx.resume()
@@ -130,6 +153,7 @@ const sbx = await createSandbox({
   network: true,       // enable networking (default: false)
   env: { NODE_ENV: "production" },
   workdir: "/app",
+  template: "node-web", // create from template
   baseUrl: "http://localhost:3111",
   token: "your-auth-token",
 })
@@ -183,7 +207,25 @@ Connect any AI agent (Claude, Cursor, etc.) to sandboxes via Model Context Proto
 }
 ```
 
-**10 MCP Tools**: `sandbox_create`, `sandbox_exec`, `sandbox_run_code`, `sandbox_read_file`, `sandbox_write_file`, `sandbox_list_files`, `sandbox_install_package`, `sandbox_list`, `sandbox_kill`, `sandbox_metrics`
+**44 MCP Tools**:
+
+| Category | Tools |
+|----------|-------|
+| Sandbox | `sandbox_create`, `sandbox_list`, `sandbox_kill`, `sandbox_clone`, `sandbox_metrics` |
+| Execution | `sandbox_exec`, `sandbox_run_code`, `sandbox_exec_queue`, `sandbox_queue_status` |
+| Filesystem | `sandbox_read_file`, `sandbox_write_file`, `sandbox_list_files`, `sandbox_install_package` |
+| Environment | `sandbox_env_get`, `sandbox_env_set`, `sandbox_env_list` |
+| Git | `sandbox_git_clone`, `sandbox_git_status`, `sandbox_git_commit`, `sandbox_git_diff` |
+| Process | `sandbox_process_list`, `sandbox_process_kill` |
+| Snapshots | `sandbox_snapshot_create`, `sandbox_snapshot_restore`, `sandbox_snapshot_list` |
+| Templates | `sandbox_template_list` |
+| Ports | `sandbox_port_expose`, `sandbox_port_list` |
+| Events | `sandbox_events_history`, `sandbox_events_publish` |
+| Streams | `sandbox_stream_logs` |
+| Observability | `sandbox_traces`, `sandbox_metrics_dashboard` |
+| Monitoring | `sandbox_set_alert`, `sandbox_alert_history` |
+| Networking | `sandbox_network_create`, `sandbox_network_connect` |
+| Volumes | `sandbox_volume_create`, `sandbox_volume_attach` |
 
 ## API Reference
 
@@ -198,6 +240,7 @@ Connect any AI agent (Claude, Cursor, etc.) to sandboxes via Model Context Proto
 | `POST` | `/sandbox/sandboxes/:id/pause` | Pause (checkpoint) |
 | `POST` | `/sandbox/sandboxes/:id/resume` | Resume |
 | `POST` | `/sandbox/sandboxes/:id/renew` | Extend TTL |
+| `POST` | `/sandbox/sandboxes/:id/clone` | Clone sandbox |
 
 ### Command Execution
 
@@ -209,6 +252,10 @@ Connect any AI agent (Claude, Cursor, etc.) to sandboxes via Model Context Proto
 | `GET` | `/sandbox/exec/background/:id/status` | Background status |
 | `GET` | `/sandbox/exec/background/:id/logs` | Background logs (cursor-based) |
 | `POST` | `/sandbox/sandboxes/:id/exec/interrupt` | Send SIGINT |
+| `POST` | `/sandbox/sandboxes/:id/exec/queue` | Queue for async execution |
+| `GET` | `/sandbox/queue/:jobId/status` | Queue job status |
+| `POST` | `/sandbox/queue/:jobId/cancel` | Cancel queued job |
+| `GET` | `/sandbox/queue/dlq` | Dead letter queue |
 
 ### Filesystem
 
@@ -227,6 +274,63 @@ Connect any AI agent (Claude, Cursor, etc.) to sandboxes via Model Context Proto
 | `POST` | `/sandbox/sandboxes/:id/files/rmdir` | Remove directories |
 | `POST` | `/sandbox/sandboxes/:id/files/chmod` | Change permissions |
 
+### Environment Variables
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/sandbox/sandboxes/:id/env/get` | Get env variable |
+| `POST` | `/sandbox/sandboxes/:id/env` | Set env variables |
+| `GET` | `/sandbox/sandboxes/:id/env` | List all env variables |
+| `POST` | `/sandbox/sandboxes/:id/env/delete` | Delete env variable |
+
+### Git Operations
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/sandbox/sandboxes/:id/git/clone` | Clone repository |
+| `GET` | `/sandbox/sandboxes/:id/git/status` | Git status |
+| `POST` | `/sandbox/sandboxes/:id/git/commit` | Create commit |
+| `GET` | `/sandbox/sandboxes/:id/git/diff` | Show diff |
+| `GET` | `/sandbox/sandboxes/:id/git/log` | Commit log |
+| `POST` | `/sandbox/sandboxes/:id/git/branch` | Create/list branches |
+| `POST` | `/sandbox/sandboxes/:id/git/checkout` | Switch branch |
+| `POST` | `/sandbox/sandboxes/:id/git/push` | Push changes |
+| `POST` | `/sandbox/sandboxes/:id/git/pull` | Pull changes |
+
+### Process Management
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/sandbox/sandboxes/:id/processes` | List processes |
+| `POST` | `/sandbox/sandboxes/:id/processes/kill` | Kill process |
+| `GET` | `/sandbox/sandboxes/:id/processes/top` | Process top |
+
+### Snapshots
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/sandbox/sandboxes/:id/snapshots` | Create snapshot |
+| `GET` | `/sandbox/sandboxes/:id/snapshots` | List snapshots |
+| `POST` | `/sandbox/sandboxes/:id/snapshots/restore` | Restore from snapshot |
+| `DELETE` | `/sandbox/snapshots/:snapshotId` | Delete snapshot |
+
+### Templates
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/sandbox/templates` | Create template |
+| `GET` | `/sandbox/templates` | List templates |
+| `GET` | `/sandbox/templates/:id` | Get template |
+| `DELETE` | `/sandbox/templates/:id` | Delete template |
+
+### Port Forwarding
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/sandbox/sandboxes/:id/ports` | Expose port |
+| `GET` | `/sandbox/sandboxes/:id/ports` | List exposed ports |
+| `DELETE` | `/sandbox/sandboxes/:id/ports` | Unexpose port |
+
 ### Code Interpreter
 
 | Method | Endpoint | Description |
@@ -243,29 +347,110 @@ Connect any AI agent (Claude, Cursor, etc.) to sandboxes via Model Context Proto
 | `GET` | `/sandbox/metrics` | Global system metrics |
 | `GET` | `/sandbox/health` | Health check |
 
+### Events
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/sandbox/events/history` | Event history |
+| `POST` | `/sandbox/events/publish` | Publish event |
+
+### Observability
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/sandbox/observability/traces` | Function execution traces |
+| `GET` | `/sandbox/observability/metrics` | Aggregated metrics dashboard |
+| `POST` | `/sandbox/observability/clear` | Clear trace data |
+
+### Streaming
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/sandbox/sandboxes/:id/stream/logs` | Stream container logs (SSE) |
+| `GET` | `/sandbox/sandboxes/:id/stream/metrics` | Stream metrics (SSE) |
+| `GET` | `/sandbox/stream/events` | Stream events (SSE) |
+
+### Resource Monitoring
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/sandbox/sandboxes/:id/alerts` | Set resource alert |
+| `GET` | `/sandbox/sandboxes/:id/alerts` | List alerts |
+| `DELETE` | `/sandbox/alerts/:alertId` | Delete alert |
+| `GET` | `/sandbox/sandboxes/:id/alerts/history` | Alert event history |
+
+### Networks
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/sandbox/networks` | Create Docker network |
+| `GET` | `/sandbox/networks` | List networks |
+| `POST` | `/sandbox/networks/:networkId/connect` | Connect sandbox |
+| `POST` | `/sandbox/networks/:networkId/disconnect` | Disconnect sandbox |
+| `DELETE` | `/sandbox/networks/:networkId` | Delete network |
+
+### Volumes
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/sandbox/volumes` | Create persistent volume |
+| `GET` | `/sandbox/volumes` | List volumes |
+| `DELETE` | `/sandbox/volumes/:volumeId` | Delete volume |
+| `POST` | `/sandbox/volumes/:volumeId/attach` | Attach to sandbox |
+| `POST` | `/sandbox/volumes/:volumeId/detach` | Detach from sandbox |
+
+### Admin
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/sandbox/admin/sweep` | Trigger TTL sweep |
+
 ## Engine Architecture
 
-The engine registers **31 iii-engine functions** across 6 modules:
+The engine registers **89 iii-engine functions** across 20 modules:
 
 ```
 functions/
-├── sandbox.ts      6 functions   Sandbox CRUD + pause/resume
-├── command.ts      2 functions   exec + exec/stream (real SSE)
-├── filesystem.ts  12 functions   Full filesystem operations
-├── interpreter.ts  3 functions   Multi-language code execution
-├── background.ts   4 functions   Background tasks + interrupt
-└── metrics.ts      2 functions   Per-sandbox + global metrics
+├── sandbox.ts       7 functions   Sandbox CRUD + pause/resume/renew
+├── command.ts       2 functions   exec + exec/stream (real SSE)
+├── filesystem.ts   12 functions   Full filesystem operations
+├── interpreter.ts   3 functions   Multi-language code execution
+├── background.ts    4 functions   Background tasks + interrupt
+├── metrics.ts       2 functions   Per-sandbox + global metrics
+├── env.ts           4 functions   Environment variable management
+├── git.ts           9 functions   Clone, status, commit, diff, log, branch, checkout, push, pull
+├── process.ts       3 functions   Process list, kill, top
+├── template.ts      4 functions   Template CRUD
+├── snapshot.ts      4 functions   Create, restore, list, delete snapshots
+├── port.ts          3 functions   Port expose, list, unexpose
+├── clone.ts         1 function    Clone sandbox with state
+├── event.ts         4 functions   Event publish, subscribe, history, stream
+├── queue.ts         5 functions   Async exec queue with DLQ + retries
+├── network.ts       5 functions   Docker network management
+├── observability.ts 4 functions   Traces, metrics, clear
+├── stream.ts        3 functions   Real-time log/metrics/event streaming (SSE)
+├── monitor.ts       5 functions   Resource alerts with auto-actions
+└── volume.ts        5 functions   Persistent volume management
 ```
 
 **3 trigger types**:
-- **HTTP** — 31 REST endpoints on port 3111
+- **HTTP** — 85 REST endpoints on port 3111
 - **Cron** — TTL sweep every 30 seconds (expires idle sandboxes)
 - **Events** — `sandbox.created`, `sandbox.killed`, `sandbox.expired` queue events
 
 **State** is managed through iii-engine's built-in KV store (file-backed by default):
-- `sandbox` scope — sandbox metadata and config
-- `background` scope — background exec tracking
-- `global` scope — counters and uptime
+- `sandbox` — sandbox metadata and config
+- `background` — background exec tracking
+- `global` — counters and uptime
+- `snapshots` — snapshot metadata
+- `templates` — template presets
+- `queue` — execution queue jobs
+- `networks` — Docker network mappings
+- `volumes` — persistent volume tracking
+- `alerts` — resource alert configurations
+- `events` — event history
+- `traces` — observability traces
+- `metrics` — aggregated metrics
 
 ## Security
 
@@ -281,6 +466,8 @@ Input validation:
 - **Image whitelist** — configurable allowed image patterns (`III_ALLOWED_IMAGES`)
 - **Command wrapping** — all commands execute inside `sh -c` with no host access
 - **Auth** — optional Bearer token authentication (`III_AUTH_TOKEN`)
+- **Shell injection prevention** — args quoted and sanitized for git, chmod, and search operations
+- **Output capping** — stdout/stderr limited to prevent memory exhaustion
 
 ## Supported Languages
 
@@ -336,30 +523,41 @@ modules:
 ```
 iii-sandbox/
 ├── packages/
-│   ├── engine/           iii-engine worker (31 functions, Docker integration)
+│   ├── engine/           iii-engine worker (89 functions, Docker integration)
 │   │   └── src/
 │   │       ├── docker/       Container management + streaming
-│   │       ├── functions/    6 function modules
+│   │       ├── functions/    20 function modules
 │   │       ├── triggers/     HTTP, cron, event triggers
 │   │       ├── lifecycle/    TTL sweep + cleanup
-│   │       ├── state/        KV wrapper + schema
+│   │       ├── state/        KV wrapper + schema (12 scopes)
 │   │       ├── security/     Path traversal, auth, validation
 │   │       └── interpreter/  Language configurations
 │   ├── sdk/              Zero-dependency client library
 │   │   └── src/
-│   │       ├── client.ts     HTTP + SSE streaming
-│   │       ├── sandbox.ts    Sandbox class
-│   │       ├── filesystem.ts FileSystem class
-│   │       └── interpreter.ts CodeInterpreter class
+│   │       ├── client.ts       HTTP + SSE streaming
+│   │       ├── sandbox.ts      Sandbox class
+│   │       ├── filesystem.ts   FileSystem class
+│   │       ├── interpreter.ts  CodeInterpreter class
+│   │       ├── env.ts          EnvManager class
+│   │       ├── git.ts          GitManager class
+│   │       ├── process.ts      ProcessManager class
+│   │       ├── port.ts         PortManager class
+│   │       ├── events.ts       EventManager class
+│   │       ├── queue.ts        QueueManager class
+│   │       ├── network.ts      NetworkManager class
+│   │       ├── observability.ts ObservabilityClient class
+│   │       ├── stream-manager.ts StreamManager class
+│   │       ├── monitor.ts      MonitorManager class
+│   │       └── volume.ts       VolumeManager class
 │   ├── cli/              Command-line interface
 │   │   └── src/
 │   │       ├── index.ts      CLI router (cac)
 │   │       └── commands/     9 command handlers
-│   └── mcp/              MCP server (10 AI tools)
+│   └── mcp/              MCP server (44 AI tools)
 │       └── src/
 │           ├── server.ts     Tool registration
 │           └── tools.ts      Zod schemas
-├── test/                 543 tests across 36 files
+├── test/                 1161 tests across 72 files
 ├── examples/             Runnable examples
 └── iii-config.yaml       Engine configuration
 ```
@@ -370,11 +568,28 @@ iii-sandbox/
 pnpm install          # Install dependencies
 pnpm build            # Build all packages
 pnpm dev              # Start engine worker (dev mode)
-pnpm test             # Run all 543 tests
+pnpm test             # Run all 1161 tests
 pnpm lint             # TypeScript type checking
 ```
 
-Tests are organized by package: 18 engine tests, 7 SDK tests, 7 CLI tests, 2 MCP tests, and 1 integration test (40 E2E scenarios covering sandbox lifecycle, command execution, file operations, code interpreter, pause/resume, metrics, security, and edge cases).
+### Test Suite
+
+72 test files organized by category:
+
+| Category | Files | Tests | Coverage |
+|----------|-------|-------|----------|
+| Engine unit tests | 20 | ~350 | All 20 function modules |
+| SDK unit tests | 16 | ~200 | All SDK managers |
+| CLI tests | 7 | ~80 | All commands |
+| MCP tests | 2 | ~30 | Tool schemas + server |
+| Integration (E2E) | 2 | ~73 | Real Docker lifecycle (skipped without Docker) |
+| Stress tests | 1 | 27 | Concurrent operations, rapid cycles |
+| Race conditions | 1 | 26 | Kill during exec, pause during stream, state transitions |
+| Docker failure injection | 1 | 31 | Daemon down, OOM, start failures, mid-stream errors |
+| Security edge cases | 1 | 72 | Injection, traversal, auth, XSS, null bytes |
+| Payload/timeout | 1 | 36 | Large outputs, binary data, NaN/Infinity, deep paths |
+| Stream edge cases | 1 | 24 | Disconnect, backpressure, SSE format, concurrent streams |
+| State consistency | 1 | 49 | External kill, KV corruption, orphans, threshold boundaries |
 
 ## License
 

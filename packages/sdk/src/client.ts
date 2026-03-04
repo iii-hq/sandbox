@@ -64,6 +64,14 @@ export class HttpClient {
     yield* this.readSSE(res);
   }
 
+  async *streamGet(path: string): AsyncGenerator<string> {
+    const res = await fetch(`${this.baseUrl}${path}`, {
+      headers: { ...this.headers(), Accept: "text/event-stream" },
+    });
+    if (!res.ok) throw new Error(`STREAM ${path} failed: ${res.status}`);
+    yield* this.readSSE(res);
+  }
+
   private async *readSSE(res: Response): AsyncGenerator<string> {
     const reader = res.body?.getReader();
     if (!reader) return;

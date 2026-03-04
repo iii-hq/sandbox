@@ -131,3 +131,102 @@ export interface CodeContext {
   sandboxId: string;
   createdAt: number;
 }
+
+export interface SandboxTemplate {
+  id: string;
+  name: string;
+  description: string;
+  config: SandboxConfig;
+  builtin: boolean;
+  createdAt: number;
+}
+
+export interface Snapshot {
+  id: string;
+  sandboxId: string;
+  name: string;
+  imageId: string;
+  size: number;
+  createdAt: number;
+}
+
+export interface SandboxEvent {
+  id: string;
+  topic: string;
+  sandboxId: string;
+  data: Record<string, unknown>;
+  timestamp: number;
+}
+
+export interface SandboxNetwork {
+  id: string;
+  name: string;
+  dockerNetworkId: string;
+  sandboxes: string[];
+  createdAt: number;
+}
+
+export interface SandboxVolume {
+  id: string;
+  name: string;
+  dockerVolumeName: string;
+  mountPath?: string;
+  sandboxId?: string;
+  size?: string;
+  createdAt: number;
+}
+
+export interface QueueJob {
+  id: string;
+  sandboxId: string;
+  command: string;
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  result?: ExecResult;
+  error?: string;
+  retries: number;
+  maxRetries: number;
+  createdAt: number;
+  startedAt?: number;
+  completedAt?: number;
+}
+
+export interface ResourceAlert {
+  id: string;
+  sandboxId: string;
+  metric: "cpu" | "memory" | "pids";
+  threshold: number;
+  action: "notify" | "pause" | "kill";
+  triggered: boolean;
+  lastChecked?: number;
+  lastTriggered?: number;
+  createdAt: number;
+}
+
+export interface AlertEvent {
+  alertId: string;
+  sandboxId: string;
+  metric: string;
+  value: number;
+  threshold: number;
+  action: string;
+  timestamp: number;
+}
+
+export interface TraceRecord {
+  id: string;
+  functionId: string;
+  sandboxId?: string;
+  duration: number;
+  status: "ok" | "error";
+  error?: string;
+  timestamp: number;
+}
+
+export interface ObservabilityMetrics {
+  totalRequests: number;
+  totalErrors: number;
+  avgDuration: number;
+  p95Duration: number;
+  activeSandboxes: number;
+  functionCounts: Record<string, number>;
+}

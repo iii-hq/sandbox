@@ -5,6 +5,14 @@ export const SCOPES = {
   METRICS: "metrics",
   GLOBAL: "global",
   BACKGROUND: "background",
+  TEMPLATES: "template",
+  SNAPSHOTS: "snapshot",
+  EVENTS: "event",
+  QUEUE: "queue",
+  OBSERVABILITY: "observability",
+  NETWORKS: "network",
+  VOLUMES: "volume",
+  ALERTS: "alert",
 } as const;
 
 export function generateId(prefix = "sbx"): string {
