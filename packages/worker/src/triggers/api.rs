@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::auth::check_auth;
 use crate::config::EngineConfig;
 
-pub fn register(bridge: &Arc<III>, config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, config: &EngineConfig) {
     let p = &config.api_prefix;
 
     let routes: Vec<(&str, &str, &str, bool)> = vec![
@@ -114,11 +114,11 @@ pub fn register(bridge: &Arc<III>, config: &EngineConfig) {
         let wrapped_id = format!("api::{fn_id}");
         let fn_id_owned = fn_id.to_string();
         let cfg = config.clone();
-        let bridge2 = bridge.clone();
+        let iii2 = iii.clone();
         let ra = *require_auth;
 
-        bridge.register_function(&wrapped_id, move |req: Value| {
-            let bridge2 = bridge2.clone();
+        iii.register_function(&wrapped_id, move |req: Value| {
+            let iii2 = iii2.clone();
             let fn_id = fn_id_owned.clone();
             let cfg = cfg.clone();
             async move {
@@ -139,7 +139,7 @@ pub fn register(bridge: &Arc<III>, config: &EngineConfig) {
                     for (k, v) in pp { merged.insert(k.clone(), v.clone()); }
                 }
 
-                match bridge2.trigger(&fn_id, Value::Object(merged)).await {
+                match iii2.trigger(&fn_id, Value::Object(merged)).await {
                     Ok(result) => Ok(json!({ "status_code": 200, "body": result })),
                     Err(e) => {
                         let msg = e.to_string();
@@ -153,26 +153,26 @@ pub fn register(bridge: &Arc<III>, config: &EngineConfig) {
         });
 
         let api_path = format!("{p}{path}");
-        let _ = bridge.register_trigger("http", &wrapped_id, json!({
+        let _ = iii.register_trigger("http", &wrapped_id, json!({
             "api_path": api_path,
             "http_method": method,
         }));
     }
 
     // Direct streaming triggers (bypass wrap pattern)
-    let _ = bridge.register_trigger("http", "cmd::run-stream", json!({
+    let _ = iii.register_trigger("http", "cmd::run-stream", json!({
         "api_path": format!("{p}/sandboxes/:id/exec/stream"),
         "http_method": "POST",
     }));
-    let _ = bridge.register_trigger("http", "stream::logs", json!({
+    let _ = iii.register_trigger("http", "stream::logs", json!({
         "api_path": format!("{p}/sandboxes/:id/stream/logs"),
         "http_method": "GET",
     }));
-    let _ = bridge.register_trigger("http", "stream::metrics", json!({
+    let _ = iii.register_trigger("http", "stream::metrics", json!({
         "api_path": format!("{p}/sandboxes/:id/stream/metrics"),
         "http_method": "GET",
     }));
-    let _ = bridge.register_trigger("http", "stream::events", json!({
+    let _ = iii.register_trigger("http", "stream::events", json!({
         "api_path": format!("{p}/stream/events"),
         "http_method": "GET",
     }));

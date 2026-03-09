@@ -14,13 +14,13 @@ fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
 }
 
-pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
     // sandbox::create
     {
         let kv = kv.clone();
         let dk = dk.clone();
         let cfg = config.clone();
-        bridge.register_function_with_description("sandbox::create", "Create a new Docker sandbox container", move |input: Value| {
+        iii.register_function_with_description("sandbox::create", "Create a new Docker sandbox container", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             let cfg = cfg.clone();
@@ -103,7 +103,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
     // sandbox::get
     {
         let kv = kv.clone();
-        bridge.register_function_with_description("sandbox::get", "Get sandbox details by ID", move |input: Value| {
+        iii.register_function_with_description("sandbox::get", "Get sandbox details by ID", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -118,7 +118,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
     // sandbox::list
     {
         let kv = kv.clone();
-        bridge.register_function_with_description("sandbox::list", "List sandboxes with filtering and pagination", move |input: Value| {
+        iii.register_function_with_description("sandbox::list", "List sandboxes with filtering and pagination", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let mut sandboxes: Vec<Sandbox> = kv.list(scopes::SANDBOXES).await;
@@ -153,7 +153,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
     // sandbox::renew
     {
         let kv = kv.clone();
-        bridge.register_function_with_description("sandbox::renew", "Extend sandbox TTL", move |input: Value| {
+        iii.register_function_with_description("sandbox::renew", "Extend sandbox TTL", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -178,7 +178,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
     {
         let kv = kv.clone();
         let dk = dk.clone();
-        bridge.register_function_with_description("sandbox::kill", "Stop and remove a sandbox container", move |input: Value| {
+        iii.register_function_with_description("sandbox::kill", "Stop and remove a sandbox container", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             async move {
@@ -206,7 +206,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
     {
         let kv = kv.clone();
         let dk = dk.clone();
-        bridge.register_function_with_description("sandbox::pause", "Pause a running sandbox", move |input: Value| {
+        iii.register_function_with_description("sandbox::pause", "Pause a running sandbox", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             async move {
@@ -236,7 +236,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
     {
         let kv = kv.clone();
         let dk = dk.clone();
-        bridge.register_function_with_description("sandbox::resume", "Resume a paused sandbox", move |input: Value| {
+        iii.register_function_with_description("sandbox::resume", "Resume a paused sandbox", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             async move {

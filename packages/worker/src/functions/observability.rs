@@ -10,11 +10,11 @@ use crate::types::{Sandbox, TraceRecord};
 
 fn now_ms() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64 }
 
-pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
     // observability::record-trace
     {
         let kv = kv.clone();
-        bridge.register_function_with_description("observability::record-trace", "Record a function execution trace", move |input: Value| {
+        iii.register_function_with_description("observability::record-trace", "Record a function execution trace", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let function_id = input.get("functionId").and_then(|v| v.as_str())
@@ -43,7 +43,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
     // observability::traces
     {
         let kv = kv.clone();
-        bridge.register_function_with_description("observability::traces", "Query execution traces", move |input: Value| {
+        iii.register_function_with_description("observability::traces", "Query execution traces", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let mut traces: Vec<TraceRecord> = kv.list(scopes::OBSERVABILITY).await;
@@ -66,7 +66,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
     // observability::metrics
     {
         let kv = kv.clone();
-        bridge.register_function_with_description("observability::metrics", "Get aggregated observability metrics", move |_input: Value| {
+        iii.register_function_with_description("observability::metrics", "Get aggregated observability metrics", move |_input: Value| {
             let kv = kv.clone();
             async move {
                 let traces: Vec<TraceRecord> = kv.list(scopes::OBSERVABILITY).await;
@@ -106,7 +106,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
     // observability::clear
     {
         let kv = kv.clone();
-        bridge.register_function_with_description("observability::clear", "Clear old trace data", move |input: Value| {
+        iii.register_function_with_description("observability::clear", "Clear old trace data", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let traces: Vec<TraceRecord> = kv.list(scopes::OBSERVABILITY).await;

@@ -13,11 +13,11 @@ use crate::types::{BackgroundExec, Sandbox};
 
 fn now_ms() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64 }
 
-pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &EngineConfig) {
     // cmd::background
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function_with_description("cmd::background", "Run a command in the background", move |input: Value| {
+        iii.register_function_with_description("cmd::background", "Run a command in the background", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -62,7 +62,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // cmd::background-status
     {
         let kv = kv.clone();
-        bridge.register_function_with_description("cmd::background-status", "Get background command status", move |input: Value| {
+        iii.register_function_with_description("cmd::background-status", "Get background command status", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -77,7 +77,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // cmd::background-logs
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function_with_description("cmd::background-logs", "Get background command logs", move |input: Value| {
+        iii.register_function_with_description("cmd::background-logs", "Get background command logs", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -101,7 +101,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // cmd::interrupt
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function_with_description("cmd::interrupt", "Send interrupt signal to a running command", move |input: Value| {
+        iii.register_function_with_description("cmd::interrupt", "Send interrupt signal to a running command", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())

@@ -12,9 +12,9 @@ use crate::types::Sandbox;
 
 fn now_ms() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64 }
 
-pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
     let kv = kv.clone(); let dk = dk.clone(); let cfg = config.clone();
-    bridge.register_function_with_description("sandbox::clone", "Clone a sandbox with its state", move |input: Value| {
+    iii.register_function_with_description("sandbox::clone", "Clone a sandbox with its state", move |input: Value| {
         let kv = kv.clone(); let dk = dk.clone(); let cfg = cfg.clone();
         async move {
             let id = input.get("id").and_then(|v| v.as_str())

@@ -8,7 +8,7 @@ use crate::types::SandboxEvent;
 
 fn now_ms() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64 }
 
-pub fn register(bridge: &Arc<III>, kv: &StateKV) {
+pub fn register(iii: &Arc<III>, kv: &StateKV) {
     let events = vec![
         ("event::sandbox-created", "sandbox.created"),
         ("event::sandbox-killed", "sandbox.killed"),
@@ -23,7 +23,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV) {
     for (id, topic) in events {
         let kv = kv.clone();
         let topic_str = topic.to_string();
-        bridge.register_function(id, move |data: Value| {
+        iii.register_function(id, move |data: Value| {
             let kv = kv.clone();
             let topic_str = topic_str.clone();
             async move {
@@ -45,7 +45,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV) {
             }
         });
 
-        let _ = bridge.register_trigger("queue", id, json!({ "topic": topic }));
+        let _ = iii.register_trigger("queue", id, json!({ "topic": topic }));
     }
 }
 

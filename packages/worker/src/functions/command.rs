@@ -9,13 +9,13 @@ use crate::docker::exec_in_container;
 use crate::state::{scopes, StateKV};
 use crate::types::Sandbox;
 
-pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
     // cmd::run
     {
         let kv = kv.clone();
         let dk = dk.clone();
         let cfg = config.clone();
-        bridge.register_function_with_description("cmd::run", "Execute a command in a sandbox", move |input: Value| {
+        iii.register_function_with_description("cmd::run", "Execute a command in a sandbox", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             let cfg = cfg.clone();
@@ -58,7 +58,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
         let kv = kv.clone();
         let dk = dk.clone();
         let cfg = config.clone();
-        bridge.register_function_with_description("cmd::run-stream", "Execute a command with streaming output", move |input: Value| {
+        iii.register_function_with_description("cmd::run-stream", "Execute a command with streaming output", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             let cfg = cfg.clone();

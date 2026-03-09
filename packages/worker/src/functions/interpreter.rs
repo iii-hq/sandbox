@@ -43,11 +43,11 @@ fn get_install_command(manager: &str, packages: &[String]) -> Vec<String> {
     cmd
 }
 
-pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
     // interp::execute
     {
         let kv = kv.clone(); let dk = dk.clone(); let cfg = config.clone();
-        bridge.register_function_with_description("interp::execute", "Execute code in specified language", move |input: Value| {
+        iii.register_function_with_description("interp::execute", "Execute code in specified language", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone(); let cfg = cfg.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -85,7 +85,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
     // interp::install
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function_with_description("interp::install", "Install packages for language", move |input: Value| {
+        iii.register_function_with_description("interp::install", "Install packages for language", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -112,7 +112,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
 
     // interp::kernels
     {
-        bridge.register_function_with_description("interp::kernels", "List available language runtimes", move |_input: Value| {
+        iii.register_function_with_description("interp::kernels", "List available language runtimes", move |_input: Value| {
             async move {
                 Ok(json!([
                     { "name": "python3", "language": "python", "displayName": "Python 3" },

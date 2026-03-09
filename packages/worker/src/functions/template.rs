@@ -63,7 +63,7 @@ fn builtin_templates() -> Vec<SandboxTemplate> {
     ]
 }
 
-pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
     {
         let kv2 = kv.clone();
         tokio::spawn(async move {
@@ -79,7 +79,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
     // template::create
     {
         let kv = kv.clone();
-        bridge.register_function_with_description("template::create", "Create a sandbox template", move |input: Value| {
+        iii.register_function_with_description("template::create", "Create a sandbox template", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let name = input.get("name").and_then(|v| v.as_str())
@@ -111,7 +111,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
     // template::list
     {
         let kv = kv.clone();
-        bridge.register_function_with_description("template::list", "List available templates", move |_input: Value| {
+        iii.register_function_with_description("template::list", "List available templates", move |_input: Value| {
             let kv = kv.clone();
             async move {
                 let templates: Vec<SandboxTemplate> = kv.list(scopes::TEMPLATES).await;
@@ -123,7 +123,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
     // template::get
     {
         let kv = kv.clone();
-        bridge.register_function_with_description("template::get", "Get template details by ID", move |input: Value| {
+        iii.register_function_with_description("template::get", "Get template details by ID", move |input: Value| {
             let kv = kv.clone();
             async move {
                 if let Some(id) = input.get("id").and_then(|v| v.as_str()) {
@@ -145,7 +145,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
     // template::delete
     {
         let kv = kv.clone();
-        bridge.register_function_with_description("template::delete", "Delete a template", move |input: Value| {
+        iii.register_function_with_description("template::delete", "Delete a template", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())

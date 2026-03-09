@@ -7,11 +7,11 @@ use crate::config::EngineConfig;
 use crate::state::{scopes, StateKV};
 use crate::types::{PortMapping, Sandbox};
 
-pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &EngineConfig) {
     // port::expose
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function_with_description("port::expose", "Expose a port on sandbox container", move |input: Value| {
+        iii.register_function_with_description("port::expose", "Expose a port on sandbox container", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -78,7 +78,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // port::list
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function_with_description("port::list", "List exposed ports", move |input: Value| {
+        iii.register_function_with_description("port::list", "List exposed ports", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -116,7 +116,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // port::unexpose
     {
         let kv = kv.clone();
-        bridge.register_function_with_description("port::unexpose", "Unexpose a port", move |input: Value| {
+        iii.register_function_with_description("port::unexpose", "Unexpose a port", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())

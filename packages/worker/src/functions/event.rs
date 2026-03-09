@@ -9,14 +9,14 @@ use crate::types::SandboxEvent;
 
 fn now_ms() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64 }
 
-pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
     // event::publish
     {
         let kv = kv.clone();
-        let bridge2 = bridge.clone();
-        bridge.register_function_with_description("event::publish", "Publish an event to subscribers", move |input: Value| {
+        let iii2 = iii.clone();
+        iii.register_function_with_description("event::publish", "Publish an event to subscribers", move |input: Value| {
             let kv = kv.clone();
-            let bridge2 = bridge2.clone();
+            let iii2 = iii2.clone();
             async move {
                 let topic = input.get("topic").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("topic is required".into()))?;
@@ -35,7 +35,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
                 kv.set(scopes::EVENTS, &id, &event).await
                     .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
 
-                let _ = bridge2.trigger_void("queue::publish", json!({
+                let _ = iii2.trigger_void("queue::publish", json!({
                     "topic": topic,
                     "payload": &event,
                 }));
@@ -48,7 +48,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
     // event::history
     {
         let kv = kv.clone();
-        bridge.register_function_with_description("event::history", "Get event history", move |input: Value| {
+        iii.register_function_with_description("event::history", "Get event history", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let mut events: Vec<SandboxEvent> = kv.list(scopes::EVENTS).await;
@@ -73,10 +73,10 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
     // event::subscribe
     {
         let kv = kv.clone();
-        let bridge2 = bridge.clone();
-        bridge.register_function_with_description("event::subscribe", "Subscribe to event topic", move |input: Value| {
+        let iii2 = iii.clone();
+        iii.register_function_with_description("event::subscribe", "Subscribe to event topic", move |input: Value| {
             let kv = kv.clone();
-            let bridge2 = bridge2.clone();
+            let iii2 = iii2.clone();
             async move {
                 let topic = input.get("topic").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("topic is required".into()))?;
@@ -84,7 +84,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
 
                 let kv2 = kv.clone();
                 let topic_str = topic.to_string();
-                bridge2.register_function(&handler_id, move |data: Value| {
+                iii2.register_function(&handler_id, move |data: Value| {
                     let kv2 = kv2.clone();
                     let topic_str = topic_str.clone();
                     async move {
@@ -102,7 +102,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
                     }
                 });
 
-                bridge2.register_trigger("queue", &handler_id, json!({ "topic": topic }))
+                iii2.register_trigger("queue", &handler_id, json!({ "topic": topic }))
                     .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
 
                 Ok(json!({ "subscribed": topic }))

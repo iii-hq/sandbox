@@ -8,11 +8,11 @@ use crate::docker::{container_logs, get_container_stats};
 use crate::state::{scopes, StateKV};
 use crate::types::{Sandbox, SandboxEvent};
 
-pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &EngineConfig) {
     // stream::logs (non-SSE fallback — returns collected log data)
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function_with_description("stream::logs", "Stream container logs via SSE", move |input: Value| {
+        iii.register_function_with_description("stream::logs", "Stream container logs via SSE", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("path_params")
@@ -41,7 +41,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // stream::metrics (returns one-shot metrics)
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function_with_description("stream::metrics", "Stream resource metrics via SSE", move |input: Value| {
+        iii.register_function_with_description("stream::metrics", "Stream resource metrics via SSE", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("path_params")
@@ -67,7 +67,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // stream::events (returns recent events)
     {
         let kv = kv.clone();
-        bridge.register_function_with_description("stream::events", "Stream events via SSE", move |input: Value| {
+        iii.register_function_with_description("stream::events", "Stream events via SSE", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let query = input.get("query_params").unwrap_or(&Value::Null);

@@ -9,8 +9,8 @@ use std::sync::Arc;
 use crate::config::EngineConfig;
 use crate::state::StateKV;
 
-pub fn register_all(bridge: &Arc<III>, _dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
-    api::register(bridge, config);
-    cron::register(bridge, config);
-    events::register(bridge, kv);
+pub fn register_all(iii: &Arc<III>, _dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
+    api::register(iii, config);
+    cron::register(iii, config);
+    events::register(iii, kv);
 }

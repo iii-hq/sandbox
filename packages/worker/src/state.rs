@@ -32,17 +32,17 @@ pub fn generate_id(prefix: &str) -> String {
 
 #[derive(Clone)]
 pub struct StateKV {
-    bridge: Arc<III>,
+    iii: Arc<III>,
 }
 
 impl StateKV {
-    pub fn new(bridge: Arc<III>) -> Self {
-        Self { bridge }
+    pub fn new(iii: Arc<III>) -> Self {
+        Self { iii }
     }
 
     pub async fn get<T: DeserializeOwned>(&self, scope: &str, key: &str) -> Option<T> {
         let result = self
-            .bridge
+            .iii
             .trigger("state::get", json!({ "scope": scope, "key": key }))
             .await
             .ok()?;
@@ -58,7 +58,7 @@ impl StateKV {
         key: &str,
         data: &T,
     ) -> Result<(), iii_sdk::IIIError> {
-        self.bridge
+        self.iii
             .trigger(
                 "state::set",
                 json!({ "scope": scope, "key": key, "value": serde_json::to_value(data).unwrap_or(Value::Null) }),
@@ -72,7 +72,7 @@ impl StateKV {
         scope: &str,
         key: &str,
     ) -> Result<(), iii_sdk::IIIError> {
-        self.bridge
+        self.iii
             .trigger("state::delete", json!({ "scope": scope, "key": key }))
             .await?;
         Ok(())
@@ -80,7 +80,7 @@ impl StateKV {
 
     pub async fn list<T: DeserializeOwned>(&self, scope: &str) -> Vec<T> {
         let result = self
-            .bridge
+            .iii
             .trigger("state::list", json!({ "scope": scope }))
             .await
             .unwrap_or(Value::Array(vec![]));

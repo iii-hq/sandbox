@@ -26,25 +26,25 @@ use std::sync::Arc;
 use crate::config::EngineConfig;
 use crate::state::StateKV;
 
-pub fn register_all(bridge: &Arc<III>, docker: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
-    sandbox::register(bridge, docker, kv, config);
-    command::register(bridge, docker, kv, config);
-    filesystem::register(bridge, docker, kv, config);
-    git::register(bridge, docker, kv, config);
-    env::register(bridge, docker, kv, config);
-    process::register(bridge, docker, kv, config);
-    port::register(bridge, docker, kv, config);
-    snapshot::register(bridge, docker, kv, config);
-    clone::register(bridge, docker, kv, config);
-    template::register(bridge, kv, config);
-    metrics::register(bridge, docker, kv);
-    monitor::register(bridge, docker, kv, config);
-    event::register(bridge, kv, config);
-    queue::register(bridge, kv, config);
-    background::register(bridge, docker, kv, config);
-    network::register(bridge, docker, kv, config);
-    volume::register(bridge, docker, kv, config);
-    observability::register(bridge, kv, config);
-    stream::register(bridge, docker, kv, config);
-    interpreter::register(bridge, docker, kv, config);
+pub fn register_all(iii: &Arc<III>, docker: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
+    sandbox::register(iii, docker, kv, config);
+    command::register(iii, docker, kv, config);
+    filesystem::register(iii, docker, kv, config);
+    git::register(iii, docker, kv, config);
+    env::register(iii, docker, kv, config);
+    process::register(iii, docker, kv, config);
+    port::register(iii, docker, kv, config);
+    snapshot::register(iii, docker, kv, config);
+    clone::register(iii, docker, kv, config);
+    template::register(iii, kv, config);
+    metrics::register(iii, docker, kv);
+    monitor::register(iii, docker, kv, config);
+    event::register(iii, kv, config);
+    queue::register(iii, kv, config);
+    background::register(iii, docker, kv, config);
+    network::register(iii, docker, kv, config);
+    volume::register(iii, docker, kv, config);
+    observability::register(iii, kv, config);
+    stream::register(iii, docker, kv, config);
+    interpreter::register(iii, docker, kv, config);
 }

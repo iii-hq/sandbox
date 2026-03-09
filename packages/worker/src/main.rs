@@ -28,21 +28,21 @@ async fn main() {
     let config = EngineConfig::from_env();
     info!(worker = %config.worker_name, url = %config.engine_url, prefix = %config.api_prefix, "Starting iii-sandbox worker");
 
-    let bridge = Arc::new(III::with_metadata(&config.engine_url, WorkerMetadata {
+    let iii = Arc::new(III::with_metadata(&config.engine_url, WorkerMetadata {
         name: config.worker_name.clone(),
         ..Default::default()
     }));
-    bridge.connect().await.expect("Failed to connect to iii-engine");
+    iii.connect().await.expect("Failed to connect to iii-engine");
     info!("Connected to iii-engine");
 
     let dk = connect_docker();
     info!("Connected to Docker");
 
-    let kv = StateKV::new(bridge.clone());
+    let kv = StateKV::new(iii.clone());
 
-    functions::register_all(&bridge, &dk, &kv, &config);
-    lifecycle::register_all(&bridge, &dk, &kv, &config);
-    triggers::register_all(&bridge, &dk, &kv, &config);
+    functions::register_all(&iii, &dk, &kv, &config);
+    lifecycle::register_all(&iii, &dk, &kv, &config);
+    triggers::register_all(&iii, &dk, &kv, &config);
 
     info!(
         port = config.rest_port,
@@ -52,11 +52,11 @@ async fn main() {
 
     let dk_shutdown = dk.clone();
     let kv_shutdown = kv.clone();
-    let bridge_shutdown = bridge.clone();
+    let iii_shutdown = iii.clone();
 
     signal::ctrl_c().await.expect("Failed to listen for SIGINT");
     info!("Shutting down...");
     lifecycle::cleanup::cleanup_all(&dk_shutdown, &kv_shutdown).await;
-    bridge_shutdown.shutdown_async().await;
+    iii_shutdown.shutdown_async().await;
     info!("Shutdown complete");
 }

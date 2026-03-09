@@ -13,11 +13,11 @@ use crate::types::{Sandbox, Snapshot};
 
 fn now_ms() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64 }
 
-pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &EngineConfig) {
     // snapshot::create
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function_with_description("snapshot::create", "Create a snapshot of sandbox state", move |input: Value| {
+        iii.register_function_with_description("snapshot::create", "Create a snapshot of sandbox state", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -64,7 +64,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // snapshot::restore
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function_with_description("snapshot::restore", "Restore sandbox from snapshot", move |input: Value| {
+        iii.register_function_with_description("snapshot::restore", "Restore sandbox from snapshot", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -98,7 +98,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // snapshot::list
     {
         let kv = kv.clone();
-        bridge.register_function_with_description("snapshot::list", "List snapshots for a sandbox", move |input: Value| {
+        iii.register_function_with_description("snapshot::list", "List snapshots for a sandbox", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -113,7 +113,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // snapshot::delete
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function_with_description("snapshot::delete", "Delete a snapshot", move |input: Value| {
+        iii.register_function_with_description("snapshot::delete", "Delete a snapshot", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let snapshot_id = input.get("snapshotId").and_then(|v| v.as_str())

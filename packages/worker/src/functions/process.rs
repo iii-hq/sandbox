@@ -10,11 +10,11 @@ use crate::types::Sandbox;
 
 const VALID_SIGNALS: &[&str] = &["TERM", "KILL", "INT", "HUP", "USR1", "USR2", "STOP", "CONT"];
 
-pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &EngineConfig) {
     // proc::list
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function_with_description("proc::list", "List running processes in sandbox", move |input: Value| {
+        iii.register_function_with_description("proc::list", "List running processes in sandbox", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -64,7 +64,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // proc::kill
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function_with_description("proc::kill", "Kill a process by PID", move |input: Value| {
+        iii.register_function_with_description("proc::kill", "Kill a process by PID", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -96,7 +96,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // proc::top
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function_with_description("proc::top", "Show top processes by resource usage", move |input: Value| {
+        iii.register_function_with_description("proc::top", "Show top processes by resource usage", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())

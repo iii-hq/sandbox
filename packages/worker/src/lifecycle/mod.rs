@@ -8,6 +8,6 @@ use std::sync::Arc;
 use crate::config::EngineConfig;
 use crate::state::StateKV;
 
-pub fn register_all(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &EngineConfig) {
-    ttl::register(bridge, dk, kv);
+pub fn register_all(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &EngineConfig) {
+    ttl::register(iii, dk, kv);
 }

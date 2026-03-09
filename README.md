@@ -621,7 +621,7 @@ iii-sandbox/
 │   ├── worker/           Rust worker binary (84 functions, 6.6 MB release)
 │   │   ├── Cargo.toml
 │   │   └── src/
-│   │       ├── main.rs       Entry point: III connect + register all
+│   │       ├── main.rs       Entry point: init + register all
 │   │       ├── config.rs     EngineConfig from env vars
 │   │       ├── docker.rs     bollard wrapper (containers, exec, stats)
 │   │       ├── state.rs      KV wrapper over trigger("state::*")
