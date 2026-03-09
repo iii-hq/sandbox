@@ -15,7 +15,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // network::create
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("network::create", move |input: Value| {
+        bridge.register_function_with_description("network::create", "Create a Docker network", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let name = input.get("name").and_then(|v| v.as_str())
@@ -54,7 +54,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // network::list
     {
         let kv = kv.clone();
-        bridge.register_function("network::list", move |_input: Value| {
+        bridge.register_function_with_description("network::list", "List Docker networks", move |_input: Value| {
             let kv = kv.clone();
             async move {
                 let networks: Vec<SandboxNetwork> = kv.list(scopes::NETWORKS).await;
@@ -66,7 +66,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // network::connect
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("network::connect", move |input: Value| {
+        bridge.register_function_with_description("network::connect", "Connect sandbox to network", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let network_id = input.get("networkId").and_then(|v| v.as_str())
@@ -100,7 +100,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // network::disconnect
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("network::disconnect", move |input: Value| {
+        bridge.register_function_with_description("network::disconnect", "Disconnect sandbox from network", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let network_id = input.get("networkId").and_then(|v| v.as_str())
@@ -131,7 +131,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // network::delete
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("network::delete", move |input: Value| {
+        bridge.register_function_with_description("network::delete", "Delete a Docker network", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let network_id = input.get("networkId").and_then(|v| v.as_str())

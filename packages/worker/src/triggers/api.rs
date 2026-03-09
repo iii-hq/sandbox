@@ -139,7 +139,7 @@ pub fn register(bridge: &Arc<III>, config: &EngineConfig) {
                     for (k, v) in pp { merged.insert(k.clone(), v.clone()); }
                 }
 
-                match bridge2.call(&fn_id, Value::Object(merged)).await {
+                match bridge2.trigger(&fn_id, Value::Object(merged)).await {
                     Ok(result) => Ok(json!({ "status_code": 200, "body": result })),
                     Err(e) => {
                         let msg = e.to_string();

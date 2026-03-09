@@ -17,7 +17,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // cmd::background
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("cmd::background", move |input: Value| {
+        bridge.register_function_with_description("cmd::background", "Run a command in the background", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -62,7 +62,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // cmd::background-status
     {
         let kv = kv.clone();
-        bridge.register_function("cmd::background-status", move |input: Value| {
+        bridge.register_function_with_description("cmd::background-status", "Get background command status", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -77,7 +77,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // cmd::background-logs
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("cmd::background-logs", move |input: Value| {
+        bridge.register_function_with_description("cmd::background-logs", "Get background command logs", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -101,7 +101,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // cmd::interrupt
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("cmd::interrupt", move |input: Value| {
+        bridge.register_function_with_description("cmd::interrupt", "Send interrupt signal to a running command", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())

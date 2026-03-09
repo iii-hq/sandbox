@@ -13,7 +13,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // env::get
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("env::get", move |input: Value| {
+        bridge.register_function_with_description("env::get", "Get environment variable value", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -40,7 +40,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // env::set
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("env::set", move |input: Value| {
+        bridge.register_function_with_description("env::set", "Set environment variables", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -72,7 +72,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // env::list
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("env::list", move |input: Value| {
+        bridge.register_function_with_description("env::list", "List all environment variables", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -106,7 +106,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // env::delete
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("env::delete", move |input: Value| {
+        bridge.register_function_with_description("env::delete", "Delete an environment variable", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())

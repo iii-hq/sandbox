@@ -36,7 +36,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
         let kv = kv.clone();
         let dk = dk.clone();
         let cfg = config.clone();
-        bridge.register_function("fs::read", move |input: Value| {
+        bridge.register_function_with_description("fs::read", "Read file contents from sandbox", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             let cfg = cfg.clone();
@@ -63,7 +63,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
         let kv = kv.clone();
         let dk = dk.clone();
         let cfg = config.clone();
-        bridge.register_function("fs::write", move |input: Value| {
+        bridge.register_function_with_description("fs::write", "Write file contents to sandbox", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             let cfg = cfg.clone();
@@ -88,7 +88,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
         let kv = kv.clone();
         let dk = dk.clone();
         let cfg = config.clone();
-        bridge.register_function("fs::delete", move |input: Value| {
+        bridge.register_function_with_description("fs::delete", "Delete a file in sandbox", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             let cfg = cfg.clone();
@@ -115,7 +115,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
         let kv = kv.clone();
         let dk = dk.clone();
         let cfg = config.clone();
-        bridge.register_function("fs::list", move |input: Value| {
+        bridge.register_function_with_description("fs::list", "List directory contents in sandbox", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             let cfg = cfg.clone();
@@ -137,7 +137,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
         let kv = kv.clone();
         let dk = dk.clone();
         let cfg = config.clone();
-        bridge.register_function("fs::search", move |input: Value| {
+        bridge.register_function_with_description("fs::search", "Search for files by glob pattern", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             let cfg = cfg.clone();
@@ -162,7 +162,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
         let kv = kv.clone();
         let dk = dk.clone();
         let cfg = config.clone();
-        bridge.register_function("fs::upload", move |input: Value| {
+        bridge.register_function_with_description("fs::upload", "Upload base64 file to sandbox", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             let cfg = cfg.clone();
@@ -191,7 +191,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
         let kv = kv.clone();
         let dk = dk.clone();
         let cfg = config.clone();
-        bridge.register_function("fs::download", move |input: Value| {
+        bridge.register_function_with_description("fs::download", "Download file as base64 from sandbox", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             let cfg = cfg.clone();
@@ -216,7 +216,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
         let kv = kv.clone();
         let dk = dk.clone();
         let cfg = config.clone();
-        bridge.register_function("fs::info", move |input: Value| {
+        bridge.register_function_with_description("fs::info", "Get file metadata and permissions", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             let cfg = cfg.clone();
@@ -242,7 +242,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
         let kv = kv.clone();
         let dk = dk.clone();
         let cfg = config.clone();
-        bridge.register_function("fs::move", move |input: Value| {
+        bridge.register_function_with_description("fs::move", "Move or rename files in sandbox", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             let cfg = cfg.clone();
@@ -277,7 +277,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
         let kv = kv.clone();
         let dk = dk.clone();
         let cfg = config.clone();
-        bridge.register_function("fs::mkdir", move |input: Value| {
+        bridge.register_function_with_description("fs::mkdir", "Create directories in sandbox", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             let cfg = cfg.clone();
@@ -307,7 +307,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
         let kv = kv.clone();
         let dk = dk.clone();
         let cfg = config.clone();
-        bridge.register_function("fs::rmdir", move |input: Value| {
+        bridge.register_function_with_description("fs::rmdir", "Remove directories from sandbox", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             let cfg = cfg.clone();
@@ -337,7 +337,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
         let kv = kv.clone();
         let dk = dk.clone();
         let cfg = config.clone();
-        bridge.register_function("fs::chmod", move |input: Value| {
+        bridge.register_function_with_description("fs::chmod", "Change file permissions in sandbox", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             let cfg = cfg.clone();

@@ -14,7 +14,7 @@ fn now_ms() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_mi
 
 pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
     let kv = kv.clone(); let dk = dk.clone(); let cfg = config.clone();
-    bridge.register_function("sandbox::clone", move |input: Value| {
+    bridge.register_function_with_description("sandbox::clone", "Clone a sandbox with its state", move |input: Value| {
         let kv = kv.clone(); let dk = dk.clone(); let cfg = cfg.clone();
         async move {
             let id = input.get("id").and_then(|v| v.as_str())

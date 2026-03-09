@@ -18,7 +18,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // monitor::set-alert
     {
         let kv = kv.clone();
-        bridge.register_function("monitor::set-alert", move |input: Value| {
+        bridge.register_function_with_description("monitor::set-alert", "Set a resource usage alert", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -63,7 +63,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // monitor::list-alerts
     {
         let kv = kv.clone();
-        bridge.register_function("monitor::list-alerts", move |input: Value| {
+        bridge.register_function_with_description("monitor::list-alerts", "List active alerts", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -78,7 +78,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // monitor::delete-alert
     {
         let kv = kv.clone();
-        bridge.register_function("monitor::delete-alert", move |input: Value| {
+        bridge.register_function_with_description("monitor::delete-alert", "Delete an alert", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let alert_id = input.get("alertId").and_then(|v| v.as_str())
@@ -95,7 +95,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // monitor::history
     {
         let kv = kv.clone();
-        bridge.register_function("monitor::history", move |input: Value| {
+        bridge.register_function_with_description("monitor::history", "Get alert trigger history", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -115,7 +115,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     {
         let kv = kv.clone(); let dk = dk.clone();
         let bridge2 = bridge.clone();
-        bridge.register_function("monitor::check", move |_input: Value| {
+        bridge.register_function_with_description("monitor::check", "Check all alerts against current metrics", move |_input: Value| {
             let kv = kv.clone(); let dk = dk.clone(); let bridge2 = bridge2.clone();
             async move {
                 let mut alerts: Vec<ResourceAlert> = kv.list(scopes::ALERTS).await;
@@ -160,8 +160,8 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
                         let _ = kv.set(scopes::ALERT_EVENTS, &generate_id("aevt"), &event).await;
 
                         match alert.action.as_str() {
-                            "pause" => { let _ = bridge2.call("sandbox::pause", json!({ "id": alert.sandbox_id })).await; }
-                            "kill" => { let _ = bridge2.call("sandbox::kill", json!({ "id": alert.sandbox_id })).await; }
+                            "pause" => { let _ = bridge2.trigger("sandbox::pause", json!({ "id": alert.sandbox_id })).await; }
+                            "kill" => { let _ = bridge2.trigger("sandbox::kill", json!({ "id": alert.sandbox_id })).await; }
                             _ => {}
                         }
                     }
