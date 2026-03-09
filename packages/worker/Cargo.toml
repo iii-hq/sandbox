@@ -1,0 +1,28 @@
+[package]
+name = "iii-sandbox-worker"
+version = "0.1.0"
+edition = "2021"
+description = "iii-sandbox worker — Docker sandbox lifecycle on iii-engine primitives"
+license = "Apache-2.0"
+authors = ["iii-hq"]
+repository = "https://github.com/iii-hq/sandbox"
+
+[[bin]]
+name = "iii-sandbox-worker"
+path = "src/main.rs"
+
+[dependencies]
+iii-sdk = "0.0.5"
+bollard = "0.18"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tar = "0.4"
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.22"
+subtle = "2"
+bytes = "1"
+futures-util = "0.3"
