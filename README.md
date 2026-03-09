@@ -22,9 +22,9 @@ Secure, isolated Docker sandboxes for code execution. Built on [iii-engine](http
   └────────────────┬─────────────────────────┘
                    ▼
   ┌─────────────────────────────────────────┐
-  │     Engine Worker  (iii-sdk, Node.js)   │
+  │        Worker  (iii-sdk, Rust)            │
   │                                         │
-  │  90 Functions · 86 Endpoints · 44 Tools │
+  │  84 Functions · 86 Endpoints · 39 Tools │
   │  sandbox · exec · fs · git · env · proc │
   │  snapshot · template · port · queue     │
   │  event · stream · monitor · volume · net│
@@ -39,14 +39,14 @@ Secure, isolated Docker sandboxes for code execution. Built on [iii-engine](http
 
 ## Quick Start
 
-**Prerequisites**: Docker, Node.js >= 20, pnpm >= 9, [iii-engine](https://github.com/iii-hq/iii) binary
+**Prerequisites**: Docker, Node.js >= 20, pnpm >= 9, Rust >= 1.82, [iii-engine](https://github.com/iii-hq/iii) binary
 
 ```bash
 # 1. Start the iii-engine
 iii --config iii-config.yaml
 
 # 2. Start the sandbox worker
-pnpm dev
+cd packages/worker && cargo run
 
 # 3. Create a sandbox
 curl -X POST http://localhost:3111/sandbox/sandboxes \
@@ -72,12 +72,12 @@ pnpm build
 
 | Package | Description | Entry |
 |---------|-------------|-------|
-| `@iii-sandbox/engine` | Worker with 90 functions, Docker integration, security | `packages/engine` |
+| `iii-sandbox-worker` | Rust binary — 84 functions, 93 triggers, Docker integration | `packages/worker` |
 | `@iii-sandbox/sdk` | Zero-dependency client library for Node.js | `packages/sdk` |
 | `iii-sandbox` (Python) | Async Python client (httpx + pydantic) | `packages/sdk-python` |
 | `iii-sandbox` (Rust) | Async Rust client (reqwest + serde) | `packages/sdk-rust` |
 | `@iii-sandbox/cli` | Command-line interface (11 commands) | `packages/cli` |
-| `@iii-sandbox/mcp` | MCP server with 44 AI tools | `packages/mcp` |
+| `@iii-sandbox/mcp` | MCP server with 39 AI tools | `packages/mcp` |
 
 ## SDK Usage
 
@@ -302,7 +302,7 @@ Connect any AI agent (Claude, Cursor, etc.) to sandboxes via Model Context Proto
 }
 ```
 
-**44 MCP Tools**:
+**39 MCP Tools**:
 
 | Category | Tools |
 |----------|-------|
@@ -500,38 +500,38 @@ Connect any AI agent (Claude, Cursor, etc.) to sandboxes via Model Context Proto
 |--------|----------|-------------|
 | `POST` | `/sandbox/admin/sweep` | Trigger TTL sweep |
 
-## Engine Architecture
+## Worker Architecture
 
-The engine registers **90 iii-engine functions** across 20 modules:
+The worker registers **84 iii-engine functions** across 20 modules. Compiles to a **6.6 MB release binary** using bollard for Docker integration:
 
 ```
 functions/
-├── sandbox.ts       7 functions   Sandbox CRUD + pause/resume/renew
-├── command.ts       2 functions   exec + exec/stream (real SSE)
-├── filesystem.ts   12 functions   Full filesystem operations
-├── interpreter.ts   3 functions   Multi-language code execution
-├── background.ts    4 functions   Background tasks + interrupt
-├── metrics.ts       2 functions   Per-sandbox + global metrics
-├── env.ts           4 functions   Environment variable management
-├── git.ts           9 functions   Clone, status, commit, diff, log, branch, checkout, push, pull
-├── process.ts       3 functions   Process list, kill, top
-├── template.ts      4 functions   Template CRUD
-├── snapshot.ts      4 functions   Create, restore, list, delete snapshots
-├── port.ts          3 functions   Port expose, list, unexpose
-├── clone.ts         1 function    Clone sandbox with state
-├── event.ts         4 functions   Event publish, subscribe, history, stream
-├── queue.ts         5 functions   Async exec queue with DLQ + retries
-├── network.ts       5 functions   Docker network management
-├── observability.ts 4 functions   Traces, metrics, clear
-├── stream.ts        3 functions   Real-time log/metrics/event streaming (SSE)
-├── monitor.ts       5 functions   Resource alerts with auto-actions
-└── volume.ts        5 functions   Persistent volume management
+├── sandbox.rs       7 functions   Sandbox CRUD + pause/resume/renew
+├── command.rs       2 functions   exec + exec/stream (real SSE)
+├── filesystem.rs   12 functions   Full filesystem operations
+├── interpreter.rs   3 functions   Multi-language code execution
+├── background.rs    4 functions   Background tasks + interrupt
+├── metrics.rs       2 functions   Per-sandbox + global metrics
+├── env.rs           4 functions   Environment variable management
+├── git.rs           9 functions   Clone, status, commit, diff, log, branch, checkout, push, pull
+├── process.rs       3 functions   Process list, kill, top
+├── template.rs      4 functions   Template CRUD
+├── snapshot.rs      4 functions   Create, restore, list, delete snapshots
+├── port.rs          3 functions   Port expose, list, unexpose
+├── clone.rs         1 function    Clone sandbox with state
+├── event.rs         4 functions   Event publish, subscribe, history, stream
+├── queue.rs         5 functions   Async exec queue with DLQ + retries
+├── network.rs       5 functions   Docker network management
+├── observability.rs 4 functions   Traces, metrics, clear
+├── stream.rs        3 functions   Real-time log/metrics/event streaming (SSE)
+├── monitor.rs       5 functions   Resource alerts with auto-actions
+└── volume.rs        5 functions   Persistent volume management
 ```
 
 **3 trigger types**:
 - **HTTP** — 86 REST endpoints on port 3111
 - **Cron** — TTL sweep every 30 seconds (expires idle sandboxes)
-- **Events** — `sandbox.created`, `sandbox.killed`, `sandbox.expired` queue events
+- **Queue** — 8 queue triggers for `sandbox.created`, `sandbox.killed`, `sandbox.expired` and other events
 
 **State** is managed through iii-engine's built-in KV store (file-backed by default):
 - `sandbox` — sandbox metadata and config
@@ -618,31 +618,34 @@ modules:
 ```
 iii-sandbox/
 ├── packages/
-│   ├── engine/           iii-engine worker (90 functions, Docker integration)
+│   ├── worker/           Rust worker binary (84 functions, 6.6 MB release)
+│   │   ├── Cargo.toml
 │   │   └── src/
-│   │       ├── docker/       Container management + streaming
-│   │       ├── functions/    20 function modules
-│   │       ├── triggers/     HTTP, cron, event triggers
-│   │       ├── lifecycle/    TTL sweep + cleanup
-│   │       ├── state/        KV wrapper + schema (12 scopes)
-│   │       ├── security/     Path traversal, auth, validation
-│   │       └── interpreter/  Language configurations
+│   │       ├── main.rs       Entry point: III connect + register all
+│   │       ├── config.rs     EngineConfig from env vars
+│   │       ├── docker.rs     bollard wrapper (containers, exec, stats)
+│   │       ├── state.rs      KV wrapper over bridge.call("state::*")
+│   │       ├── auth.rs       Token validation + path/command security
+│   │       ├── types.rs      All domain types (Sandbox, ExecResult, etc.)
+│   │       ├── functions/    20 modules — 84 registered functions
+│   │       ├── triggers/     HTTP (82), cron (1), queue (8) triggers
+│   │       └── lifecycle/    TTL sweep, health check, graceful shutdown
 │   ├── sdk/              TypeScript client library (zero-dep)
-│   │   └── src/              15 modules (client, sandbox, 13 managers)
+│   │   └── src/              18 modules (client, sandbox, 16 managers)
 │   ├── sdk-python/       Python client library (httpx + pydantic)
 │   │   ├── src/iii_sandbox/  17 modules (client, sandbox, types, 14 managers)
-│   │   └── tests/            15 test files (150 tests)
+│   │   └── tests/            13 test files (150 tests)
 │   ├── sdk-rust/         Rust client library (reqwest + serde)
-│   │   └── src/              18 modules (client, sandbox, types, error, 14 managers)
+│   │   └── src/              19 modules (client, sandbox, types, error, 15 managers)
 │   ├── cli/              Command-line interface
 │   │   └── src/
 │   │       ├── index.ts      CLI router (cac)
 │   │       └── commands/     9 command handlers
-│   └── mcp/              MCP server (44 AI tools)
+│   └── mcp/              MCP server (39 AI tools)
 │       └── src/
 │           ├── server.ts     Tool registration
 │           └── tools.ts      Zod schemas
-├── test/                 1161 TypeScript tests across 72 files
+├── test/                 ~293 TypeScript SDK/CLI/MCP tests across 33 files
 ├── examples/             Runnable examples
 └── iii-config.yaml       Engine configuration
 ```
@@ -652,40 +655,25 @@ iii-sandbox/
 ```bash
 pnpm install          # Install dependencies
 pnpm build            # Build all packages
-pnpm dev              # Start engine worker (dev mode)
-pnpm test             # Run TypeScript tests (1161)
+cd packages/worker && cargo run   # Start Rust engine
+pnpm test             # Run TypeScript SDK/CLI/MCP tests (~293)
 pnpm lint             # TypeScript type checking
 
-cd packages/sdk-python && pip install -e ".[dev]" && pytest   # Python tests (150)
-cd packages/sdk-rust && cargo test                             # Rust tests (99)
+cd packages/worker && cargo test                          # Rust engine tests (205)
+cd packages/sdk-python && pip install -e ".[dev]" && pytest    # Python SDK tests (150)
+cd packages/sdk-rust && cargo test                             # Rust SDK tests (32)
 ```
 
 ### Test Suite
 
-**1,410 total tests** across TypeScript, Python, and Rust:
+**~680 total tests** across TypeScript, Python, and Rust:
 
 | Language | Files | Tests | Tool |
 |----------|-------|-------|------|
-| TypeScript | 72 | 1,161 | vitest |
-| Python | 15 | 150 | pytest + respx |
-| Rust | 11 | 99 | cargo test + mockito |
-
-TypeScript tests by category:
-
-| Category | Files | Tests | Coverage |
-|----------|-------|-------|----------|
-| Engine unit tests | 20 | ~350 | All 20 function modules |
-| SDK unit tests | 16 | ~200 | All SDK managers |
-| CLI tests | 7 | ~80 | All commands |
-| MCP tests | 2 | ~30 | Tool schemas + server |
-| Integration (E2E) | 2 | ~73 | Real Docker lifecycle (skipped without Docker) |
-| Stress tests | 1 | 27 | Concurrent operations, rapid cycles |
-| Race conditions | 1 | 26 | Kill during exec, pause during stream, state transitions |
-| Docker failure injection | 1 | 31 | Daemon down, OOM, start failures, mid-stream errors |
-| Security edge cases | 1 | 72 | Injection, traversal, auth, XSS, null bytes |
-| Payload/timeout | 1 | 36 | Large outputs, binary data, NaN/Infinity, deep paths |
-| Stream edge cases | 1 | 24 | Disconnect, backpressure, SSE format, concurrent streams |
-| State consistency | 1 | 49 | External kill, KV corruption, orphans, threshold boundaries |
+| TypeScript (SDK/CLI/MCP) | 33 | ~293 | vitest |
+| Python SDK | 13 | 150 | pytest + respx |
+| Rust SDK | 11 | 32 | cargo test + mockito |
+| Rust engine | 8 modules | 205 | cargo test |
 
 ## License
 

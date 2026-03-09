@@ -6,7 +6,7 @@
   "license": "Apache-2.0",
   "scripts": {
     "build": "pnpm -r build",
-    "dev": "pnpm --filter @iii-sandbox/engine dev",
+    "dev:worker": "cd packages/worker && cargo run",
     "test": "vitest run",
     "lint": "tsc --noEmit",
     "clean": "pnpm -r exec rm -rf dist"
