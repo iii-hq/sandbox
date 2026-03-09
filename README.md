@@ -624,7 +624,7 @@ iii-sandbox/
 │   │       ├── main.rs       Entry point: III connect + register all
 │   │       ├── config.rs     EngineConfig from env vars
 │   │       ├── docker.rs     bollard wrapper (containers, exec, stats)
-│   │       ├── state.rs      KV wrapper over bridge.call("state::*")
+│   │       ├── state.rs      KV wrapper over trigger("state::*")
 │   │       ├── auth.rs       Token validation + path/command security
 │   │       ├── types.rs      All domain types (Sandbox, ExecResult, etc.)
 │   │       ├── functions/    20 modules — 84 registered functions
