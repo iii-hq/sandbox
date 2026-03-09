@@ -43,7 +43,7 @@ impl StateKV {
     pub async fn get<T: DeserializeOwned>(&self, scope: &str, key: &str) -> Option<T> {
         let result = self
             .bridge
-            .call("state::get", json!({ "scope": scope, "key": key }))
+            .trigger("state::get", json!({ "scope": scope, "key": key }))
             .await
             .ok()?;
         if result.is_null() {
@@ -59,7 +59,7 @@ impl StateKV {
         data: &T,
     ) -> Result<(), iii_sdk::IIIError> {
         self.bridge
-            .call(
+            .trigger(
                 "state::set",
                 json!({ "scope": scope, "key": key, "value": serde_json::to_value(data).unwrap_or(Value::Null) }),
             )
@@ -73,7 +73,7 @@ impl StateKV {
         key: &str,
     ) -> Result<(), iii_sdk::IIIError> {
         self.bridge
-            .call("state::delete", json!({ "scope": scope, "key": key }))
+            .trigger("state::delete", json!({ "scope": scope, "key": key }))
             .await?;
         Ok(())
     }
@@ -81,7 +81,7 @@ impl StateKV {
     pub async fn list<T: DeserializeOwned>(&self, scope: &str) -> Vec<T> {
         let result = self
             .bridge
-            .call("state::list", json!({ "scope": scope }))
+            .trigger("state::list", json!({ "scope": scope }))
             .await
             .unwrap_or(Value::Array(vec![]));
         serde_json::from_value(result).unwrap_or_default()

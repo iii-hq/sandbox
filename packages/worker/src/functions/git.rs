@@ -27,7 +27,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // git::clone
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("git::clone", move |input: Value| {
+        bridge.register_function_with_description("git::clone", "Clone a git repository into sandbox", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -61,7 +61,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // git::status
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("git::status", move |input: Value| {
+        bridge.register_function_with_description("git::status", "Get git working tree status", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -96,7 +96,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // git::commit
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("git::commit", move |input: Value| {
+        bridge.register_function_with_description("git::commit", "Create a git commit", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -119,7 +119,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // git::diff
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("git::diff", move |input: Value| {
+        bridge.register_function_with_description("git::diff", "Show git diff output", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -142,7 +142,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // git::log
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("git::log", move |input: Value| {
+        bridge.register_function_with_description("git::log", "Show git commit history", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -174,7 +174,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // git::branch
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("git::branch", move |input: Value| {
+        bridge.register_function_with_description("git::branch", "Create or list git branches", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -214,7 +214,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // git::checkout
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("git::checkout", move |input: Value| {
+        bridge.register_function_with_description("git::checkout", "Switch git branch", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -230,7 +230,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // git::push
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("git::push", move |input: Value| {
+        bridge.register_function_with_description("git::push", "Push commits to remote", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -251,7 +251,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // git::pull
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("git::pull", move |input: Value| {
+        bridge.register_function_with_description("git::pull", "Pull changes from remote", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())

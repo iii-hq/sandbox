@@ -14,7 +14,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
     {
         let kv = kv.clone();
         let bridge2 = bridge.clone();
-        bridge.register_function("event::publish", move |input: Value| {
+        bridge.register_function_with_description("event::publish", "Publish an event to subscribers", move |input: Value| {
             let kv = kv.clone();
             let bridge2 = bridge2.clone();
             async move {
@@ -35,7 +35,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
                 kv.set(scopes::EVENTS, &id, &event).await
                     .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
 
-                let _ = bridge2.call_void("queue::publish", json!({
+                let _ = bridge2.trigger_void("queue::publish", json!({
                     "topic": topic,
                     "payload": &event,
                 }));
@@ -48,7 +48,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
     // event::history
     {
         let kv = kv.clone();
-        bridge.register_function("event::history", move |input: Value| {
+        bridge.register_function_with_description("event::history", "Get event history", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let mut events: Vec<SandboxEvent> = kv.list(scopes::EVENTS).await;
@@ -74,7 +74,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
     {
         let kv = kv.clone();
         let bridge2 = bridge.clone();
-        bridge.register_function("event::subscribe", move |input: Value| {
+        bridge.register_function_with_description("event::subscribe", "Subscribe to event topic", move |input: Value| {
             let kv = kv.clone();
             let bridge2 = bridge2.clone();
             async move {

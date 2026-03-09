@@ -16,7 +16,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // volume::create
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("volume::create", move |input: Value| {
+        bridge.register_function_with_description("volume::create", "Create a persistent volume", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let name = input.get("name").and_then(|v| v.as_str())
@@ -49,7 +49,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // volume::list
     {
         let kv = kv.clone();
-        bridge.register_function("volume::list", move |_input: Value| {
+        bridge.register_function_with_description("volume::list", "List persistent volumes", move |_input: Value| {
             let kv = kv.clone();
             async move {
                 let volumes: Vec<SandboxVolume> = kv.list(scopes::VOLUMES).await;
@@ -61,7 +61,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // volume::delete
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("volume::delete", move |input: Value| {
+        bridge.register_function_with_description("volume::delete", "Delete a persistent volume", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let volume_id = input.get("volumeId").and_then(|v| v.as_str())
@@ -79,7 +79,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // volume::attach
     {
         let kv = kv.clone();
-        bridge.register_function("volume::attach", move |input: Value| {
+        bridge.register_function_with_description("volume::attach", "Attach volume to sandbox", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let volume_id = input.get("volumeId").and_then(|v| v.as_str())
@@ -106,7 +106,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Eng
     // volume::detach
     {
         let kv = kv.clone();
-        bridge.register_function("volume::detach", move |input: Value| {
+        bridge.register_function_with_description("volume::detach", "Detach volume from sandbox", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let volume_id = input.get("volumeId").and_then(|v| v.as_str())

@@ -27,7 +27,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV) {
     // metrics::sandbox
     {
         let kv = kv.clone(); let dk = dk.clone();
-        bridge.register_function("metrics::sandbox", move |input: Value| {
+        bridge.register_function_with_description("metrics::sandbox", "Get sandbox resource metrics", move |input: Value| {
             let kv = kv.clone(); let dk = dk.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -45,7 +45,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV) {
     // metrics::global
     {
         let kv = kv.clone();
-        bridge.register_function("metrics::global", move |_input: Value| {
+        bridge.register_function_with_description("metrics::global", "Get global system metrics", move |_input: Value| {
             let kv = kv.clone();
             async move {
                 let sandboxes: Vec<Sandbox> = kv.list(scopes::SANDBOXES).await;

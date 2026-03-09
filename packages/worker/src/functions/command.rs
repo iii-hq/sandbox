@@ -15,7 +15,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
         let kv = kv.clone();
         let dk = dk.clone();
         let cfg = config.clone();
-        bridge.register_function("cmd::run", move |input: Value| {
+        bridge.register_function_with_description("cmd::run", "Execute a command in a sandbox", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             let cfg = cfg.clone();
@@ -58,7 +58,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &Engi
         let kv = kv.clone();
         let dk = dk.clone();
         let cfg = config.clone();
-        bridge.register_function("cmd::run-stream", move |input: Value| {
+        bridge.register_function_with_description("cmd::run-stream", "Execute a command with streaming output", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             let cfg = cfg.clone();

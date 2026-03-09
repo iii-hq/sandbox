@@ -7,7 +7,7 @@ mod state;
 mod triggers;
 mod types;
 
-use iii_sdk::III;
+use iii_sdk::{III, WorkerMetadata};
 use std::sync::Arc;
 use tokio::signal;
 use tracing::info;
@@ -28,7 +28,10 @@ async fn main() {
     let config = EngineConfig::from_env();
     info!(worker = %config.worker_name, url = %config.engine_url, prefix = %config.api_prefix, "Starting iii-sandbox worker");
 
-    let bridge = Arc::new(III::new(&config.engine_url));
+    let bridge = Arc::new(III::with_metadata(&config.engine_url, WorkerMetadata {
+        name: config.worker_name.clone(),
+        ..Default::default()
+    }));
     bridge.connect().await.expect("Failed to connect to iii-engine");
     info!("Connected to iii-engine");
 
@@ -49,9 +52,11 @@ async fn main() {
 
     let dk_shutdown = dk.clone();
     let kv_shutdown = kv.clone();
+    let bridge_shutdown = bridge.clone();
 
     signal::ctrl_c().await.expect("Failed to listen for SIGINT");
     info!("Shutting down...");
     lifecycle::cleanup::cleanup_all(&dk_shutdown, &kv_shutdown).await;
+    bridge_shutdown.shutdown_async().await;
     info!("Shutdown complete");
 }

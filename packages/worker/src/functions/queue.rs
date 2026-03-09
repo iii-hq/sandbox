@@ -14,7 +14,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
     {
         let kv = kv.clone();
         let bridge2 = bridge.clone();
-        bridge.register_function("queue::submit", move |input: Value| {
+        bridge.register_function_with_description("queue::submit", "Submit a command for async execution", move |input: Value| {
             let kv = kv.clone();
             let bridge2 = bridge2.clone();
             async move {
@@ -40,7 +40,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
                 kv.set(scopes::QUEUE, &job_id, &job).await
                     .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
 
-                let _ = bridge2.call_void("queue::process", json!({ "jobId": &job_id }));
+                let _ = bridge2.trigger_void("queue::process", json!({ "jobId": &job_id }));
                 serde_json::to_value(&job).map_err(|e| iii_sdk::IIIError::Serde(e.to_string()))
             }
         });
@@ -49,7 +49,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
     // queue::status
     {
         let kv = kv.clone();
-        bridge.register_function("queue::status", move |input: Value| {
+        bridge.register_function_with_description("queue::status", "Get queued job status", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let job_id = input.get("jobId").and_then(|v| v.as_str())
@@ -64,7 +64,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
     // queue::cancel
     {
         let kv = kv.clone();
-        bridge.register_function("queue::cancel", move |input: Value| {
+        bridge.register_function_with_description("queue::cancel", "Cancel a queued job", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let job_id = input.get("jobId").and_then(|v| v.as_str())
@@ -86,7 +86,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
     // queue::dlq
     {
         let kv = kv.clone();
-        bridge.register_function("queue::dlq", move |input: Value| {
+        bridge.register_function_with_description("queue::dlq", "List dead letter queue entries", move |input: Value| {
             let kv = kv.clone();
             async move {
                 let all: Vec<QueueJob> = kv.list(scopes::QUEUE).await;
@@ -104,7 +104,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
     {
         let kv = kv.clone();
         let bridge2 = bridge.clone();
-        bridge.register_function("queue::process", move |input: Value| {
+        bridge.register_function_with_description("queue::process", "Process next queued job", move |input: Value| {
             let kv = kv.clone();
             let bridge2 = bridge2.clone();
             async move {
@@ -121,7 +121,7 @@ pub fn register(bridge: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
                 kv.set(scopes::QUEUE, &job.id, &job).await
                     .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
 
-                match bridge2.call("cmd::run", json!({ "id": job.sandbox_id, "command": job.command })).await {
+                match bridge2.trigger("cmd::run", json!({ "id": job.sandbox_id, "command": job.command })).await {
                     Ok(result_val) => {
                         let result: ExecResult = serde_json::from_value(result_val).unwrap_or(ExecResult {
                             exit_code: -1, stdout: String::new(), stderr: "parse error".into(), duration: 0,

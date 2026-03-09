@@ -19,7 +19,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV) {
     {
         let kv = kv.clone();
         let dk = dk.clone();
-        bridge.register_function("lifecycle::ttl-sweep", move |_input: Value| {
+        bridge.register_function_with_description("lifecycle::ttl-sweep", "Sweep expired sandboxes", move |_input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
             async move {
@@ -51,7 +51,7 @@ pub fn register(bridge: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV) {
     }
 
     {
-        bridge.register_function("lifecycle::health", move |_input: Value| {
+        bridge.register_function_with_description("lifecycle::health", "Health check endpoint", move |_input: Value| {
             async move { Ok(json!({ "status": "healthy" })) }
         });
     }
