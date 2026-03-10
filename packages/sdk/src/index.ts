@@ -44,6 +44,8 @@ export { ObservabilityClient } from "./observability.js";
 export type { TraceRecord, ObservabilityMetrics } from "./observability.js";
 export { MonitorManager } from "./monitor.js";
 export type { ResourceAlert, AlertEvent } from "./monitor.js";
+export { TerminalManager } from "./terminal.js";
+export type { TerminalSession } from "./terminal.js";
 export { VolumeManager } from "./volume.js";
 export type { VolumeInfo } from "./volume.js";
 

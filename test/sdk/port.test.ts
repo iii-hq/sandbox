@@ -12,6 +12,7 @@ describe("PortManager", () => {
       post: vi.fn(),
       del: vi.fn(),
       stream: vi.fn(),
+      getBaseUrl: vi.fn().mockReturnValue("http://localhost:3111"),
     } as unknown as HttpClient
     ports = new PortManager(mockClient, "sbx_test")
   })
@@ -76,6 +77,18 @@ describe("PortManager", () => {
         "/sandbox/sandboxes/sbx_test/ports?containerPort=8080",
       )
       expect(result).toEqual({ removed: 8080 })
+    })
+  })
+
+  describe("getProxyUrl", () => {
+    it("returns proxy URL for a given port", () => {
+      const url = ports.getProxyUrl(3000)
+      expect(url).toBe("http://localhost:3111/sandbox/proxy/sbx_test/3000")
+    })
+
+    it("returns different URL for different port", () => {
+      const url = ports.getProxyUrl(8080)
+      expect(url).toBe("http://localhost:3111/sandbox/proxy/sbx_test/8080")
     })
   })
 })
