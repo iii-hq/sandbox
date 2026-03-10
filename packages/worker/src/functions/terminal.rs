@@ -1,5 +1,6 @@
-use bollard::exec::CreateExecOptions;
+use bollard::exec::{CreateExecOptions, StartExecResults};
 use bollard::Docker;
+use futures_util::StreamExt;
 use iii_sdk::III;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -13,12 +14,14 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
     {
         let kv = kv.clone();
         let dk = dk.clone();
+        let iii2 = iii.clone();
         iii.register_function_with_description(
             "terminal::create",
-            "Create an interactive terminal session (PTY exec)",
+            "Create an interactive terminal session with iii channel for PTY streaming",
             move |input: Value| {
                 let kv = kv.clone();
                 let dk = dk.clone();
+                let iii2 = iii2.clone();
                 async move {
                     let id = input
                         .get("id")
@@ -35,7 +38,8 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                     let shell = input
                         .get("shell")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("/bin/sh");
+                        .unwrap_or("/bin/sh")
+                        .to_string();
 
                     let sandbox: Sandbox = kv
                         .get(scopes::SANDBOXES, id)
@@ -51,11 +55,12 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                     }
 
                     let container_name = format!("iii-sbx-{id}");
+
                     let exec = dk
                         .create_exec(
                             &container_name,
                             CreateExecOptions {
-                                cmd: Some(vec![shell]),
+                                cmd: Some(vec![shell.as_str()]),
                                 attach_stdin: Some(true),
                                 attach_stdout: Some(true),
                                 attach_stderr: Some(true),
@@ -68,6 +73,67 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                             iii_sdk::IIIError::Handler(format!("Failed to create exec: {e}"))
                         })?;
 
+                    let exec_id = exec.id.clone();
+
+                    if cols != 80 || rows != 24 {
+                        let _ = dk
+                            .resize_exec(
+                                &exec_id,
+                                bollard::exec::ResizeExecOptions {
+                                    height: rows,
+                                    width: cols,
+                                },
+                            )
+                            .await;
+                    }
+
+                    let channel = iii2.create_channel(None).await.map_err(|e| {
+                        iii_sdk::IIIError::Handler(format!("Failed to create channel: {e}"))
+                    })?;
+
+                    let start_result = dk
+                        .start_exec(&exec_id, None)
+                        .await
+                        .map_err(|e| {
+                            iii_sdk::IIIError::Handler(format!("Failed to start exec: {e}"))
+                        })?;
+
+                    if let StartExecResults::Attached {
+                        mut output,
+                        input: exec_input,
+                    } = start_result
+                    {
+                        let writer = channel.writer;
+                        let reader = channel.reader;
+
+                        tokio::spawn(async move {
+                            while let Some(Ok(msg)) = output.next().await {
+                                let data = match msg {
+                                    bollard::container::LogOutput::StdOut { message } => message,
+                                    bollard::container::LogOutput::StdErr { message } => message,
+                                    _ => continue,
+                                };
+                                if writer.write(&data).await.is_err() {
+                                    break;
+                                }
+                            }
+                            let _ = writer.close().await;
+                        });
+
+                        tokio::spawn(async move {
+                            use tokio::io::AsyncWriteExt;
+                            let mut stdin = exec_input;
+                            while let Ok(Some(data)) = reader.next_binary().await {
+                                if stdin.write_all(&data).await.is_err() {
+                                    break;
+                                }
+                                if stdin.flush().await.is_err() {
+                                    break;
+                                }
+                            }
+                        });
+                    }
+
                     let session_id = state::generate_id("term");
 
                     let session = json!({
@@ -77,13 +143,21 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                         "cols": cols,
                         "rows": rows,
                         "shell": shell,
-                        "status": "created",
+                        "status": "running",
                         "createdAt": chrono::Utc::now().timestamp_millis() as u64,
+                        "channel": {
+                            "writer": channel.writer_ref,
+                            "reader": channel.reader_ref,
+                        },
                     });
 
-                    kv.set(scopes::SANDBOXES, &format!("{id}:terminal:{session_id}"), &session)
-                        .await
-                        .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
+                    kv.set(
+                        scopes::SANDBOXES,
+                        &format!("{id}:terminal:{session_id}"),
+                        &session,
+                    )
+                    .await
+                    .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
 
                     let mut sessions: Vec<String> = sandbox
                         .metadata
@@ -305,7 +379,7 @@ mod tests {
     }
 
     #[test]
-    fn session_json_structure() {
+    fn session_json_with_channel_refs() {
         let session = json!({
             "sessionId": "term_abc",
             "sandboxId": "sbx_1",
@@ -313,13 +387,25 @@ mod tests {
             "cols": 80,
             "rows": 24,
             "shell": "/bin/sh",
-            "status": "created",
+            "status": "running",
             "createdAt": 1700000000000u64,
+            "channel": {
+                "writer": {
+                    "channel_id": "ch_1",
+                    "access_key": "key_w",
+                    "direction": "write",
+                },
+                "reader": {
+                    "channel_id": "ch_1",
+                    "access_key": "key_r",
+                    "direction": "read",
+                },
+            },
         });
-        assert_eq!(session["sessionId"], "term_abc");
-        assert_eq!(session["cols"], 80);
-        assert_eq!(session["rows"], 24);
-        assert_eq!(session["status"], "created");
+        assert_eq!(session["status"], "running");
+        assert!(session.get("channel").is_some());
+        assert!(session["channel"].get("writer").is_some());
+        assert!(session["channel"].get("reader").is_some());
     }
 
     #[test]
