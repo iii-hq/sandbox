@@ -18,6 +18,7 @@ pub mod volume;
 pub mod observability;
 pub mod stream;
 pub mod interpreter;
+pub mod warmpool;
 
 use bollard::Docker;
 use iii_sdk::III;
@@ -47,4 +48,5 @@ pub fn register_all(iii: &Arc<III>, docker: &Arc<Docker>, kv: &StateKV, config: 
     observability::register(iii, kv, config);
     stream::register(iii, docker, kv, config);
     interpreter::register(iii, docker, kv, config);
+    warmpool::register(iii, docker, kv, config);
 }

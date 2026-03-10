@@ -3,6 +3,7 @@ mod config;
 mod docker;
 mod functions;
 mod lifecycle;
+mod ratelimit;
 mod state;
 mod triggers;
 mod types;
@@ -14,6 +15,7 @@ use tracing::info;
 
 use config::EngineConfig;
 use docker::connect_docker;
+use ratelimit::RateLimiter;
 use state::StateKV;
 
 #[tokio::main]
@@ -39,10 +41,23 @@ async fn main() {
     info!("Connected to Docker");
 
     let kv = StateKV::new(iii.clone());
+    let limiter = Arc::new(RateLimiter::new(config.rate_limit.clone()));
+
+    if config.rate_limit.enabled {
+        info!(
+            token_rpm = config.rate_limit.token_requests_per_minute,
+            burst = config.rate_limit.token_burst,
+            "Rate limiting enabled"
+        );
+    }
+
+    if config.warm_pool_size > 0 {
+        info!(pool_size = config.warm_pool_size, "Warm pool enabled");
+    }
 
     functions::register_all(&iii, &dk, &kv, &config);
     lifecycle::register_all(&iii, &dk, &kv, &config);
-    triggers::register_all(&iii, &dk, &kv, &config);
+    triggers::register_all(&iii, &dk, &kv, &config, &limiter);
 
     info!(
         port = config.rest_port,

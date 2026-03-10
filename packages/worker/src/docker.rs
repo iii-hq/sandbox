@@ -465,6 +465,63 @@ pub async fn container_top(
     Ok(serde_json::to_value(top).unwrap_or(Value::Null))
 }
 
+pub async fn create_pool_container(
+    docker: &Docker,
+    container_name: &str,
+    config: &SandboxConfig,
+) -> Result<(), String> {
+    let workdir = config.workdir.as_deref().unwrap_or("/workspace");
+    let memory = config.memory.unwrap_or(512);
+    let cpu = config.cpu.unwrap_or(1.0);
+    let network_mode = if config.network.unwrap_or(false) {
+        "bridge"
+    } else {
+        "none"
+    };
+
+    let mut labels = HashMap::new();
+    labels.insert("iii-sandbox".to_string(), "true".to_string());
+    labels.insert("iii-pool".to_string(), "true".to_string());
+
+    let host_config = bollard::models::HostConfig {
+        memory: Some((memory * 1024 * 1024) as i64),
+        cpu_shares: Some((cpu * 1024.0) as i64),
+        pids_limit: Some(256),
+        security_opt: Some(vec!["no-new-privileges".to_string()]),
+        cap_drop: Some(vec![
+            "NET_RAW".to_string(),
+            "SYS_ADMIN".to_string(),
+            "MKNOD".to_string(),
+        ]),
+        network_mode: Some(network_mode.to_string()),
+        readonly_rootfs: Some(false),
+        ..Default::default()
+    };
+
+    let container_config: ContainerConfig<String> = ContainerConfig {
+        image: Some(config.image.clone()),
+        working_dir: Some(workdir.to_string()),
+        tty: Some(false),
+        open_stdin: Some(false),
+        host_config: Some(host_config),
+        labels: Some(labels),
+        cmd: Some(vec!["tail".to_string(), "-f".to_string(), "/dev/null".to_string()]),
+        ..Default::default()
+    };
+
+    let opts = CreateContainerOptions {
+        name: container_name,
+        platform: None,
+    };
+
+    docker
+        .create_container(Some(opts), container_config)
+        .await
+        .map_err(|e| format!("Failed to create pool container: {e}"))?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

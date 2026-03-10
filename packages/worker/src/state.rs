@@ -18,6 +18,7 @@ pub mod scopes {
     pub const VOLUMES: &str = "volume";
     pub const ALERTS: &str = "alert";
     pub const ALERT_EVENTS: &str = "alert_event";
+    pub const POOL: &str = "pool";
 }
 
 pub fn generate_id(prefix: &str) -> String {
@@ -221,6 +222,11 @@ mod tests {
     }
 
     #[test]
+    fn scope_pool() {
+        assert_eq!(scopes::POOL, "pool");
+    }
+
+    #[test]
     fn all_scopes_non_empty() {
         let all = [
             scopes::SANDBOXES,
@@ -236,6 +242,7 @@ mod tests {
             scopes::VOLUMES,
             scopes::ALERTS,
             scopes::ALERT_EVENTS,
+            scopes::POOL,
         ];
         for s in all {
             assert!(!s.is_empty(), "scope constant must not be empty");

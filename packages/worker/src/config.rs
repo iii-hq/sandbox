@@ -1,5 +1,16 @@
 use std::env;
 
+use crate::ratelimit::RateLimitConfig;
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct PoolProfile {
+    pub image: String,
+    pub memory_mb: u64,
+    pub cpu: f64,
+    pub network_enabled: bool,
+}
+
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct EngineConfig {
@@ -18,6 +29,10 @@ pub struct EngineConfig {
     pub allowed_images: Vec<String>,
     pub workspace_dir: String,
     pub max_command_timeout: u64,
+    pub warm_pool_size: usize,
+    pub warm_pool_replenish_interval: String,
+    pub warm_pool_profiles: Vec<PoolProfile>,
+    pub rate_limit: RateLimitConfig,
 }
 
 fn parse_int_or_default(var: &str, default: u64) -> u64 {
@@ -58,8 +73,49 @@ impl EngineConfig {
             workspace_dir: env::var("III_WORKSPACE_DIR")
                 .unwrap_or_else(|_| "/workspace".to_string()),
             max_command_timeout: parse_int_or_default("III_MAX_CMD_TIMEOUT", 300),
+            warm_pool_size: parse_int_or_default("III_POOL_SIZE", 0) as usize,
+            warm_pool_replenish_interval: env::var("III_POOL_REPLENISH")
+                .unwrap_or_else(|_| "*/30 * * * * *".to_string()),
+            warm_pool_profiles: parse_pool_profiles(),
+            rate_limit: RateLimitConfig {
+                enabled: env::var("III_RATE_LIMIT_ENABLED")
+                    .map(|v| v == "true" || v == "1")
+                    .unwrap_or(false),
+                token_requests_per_minute: parse_int_or_default("III_RATE_TOKEN_RPM", 600) as u32,
+                token_burst: parse_int_or_default("III_RATE_TOKEN_BURST", 100) as u32,
+                sandbox_exec_per_minute: parse_int_or_default("III_RATE_SBX_EXEC_PM", 120) as u32,
+                sandbox_fs_ops_per_minute: parse_int_or_default("III_RATE_SBX_FS_PM", 300) as u32,
+            },
         }
     }
+}
+
+fn parse_pool_profiles() -> Vec<PoolProfile> {
+    let raw = env::var("III_POOL_PROFILES").unwrap_or_default();
+    if raw.is_empty() {
+        return vec![
+            PoolProfile {
+                image: "python:3.12-slim".to_string(),
+                memory_mb: 512,
+                cpu: 1.0,
+                network_enabled: true,
+            },
+        ];
+    }
+    raw.split(';')
+        .filter_map(|entry| {
+            let parts: Vec<&str> = entry.split(',').collect();
+            if parts.len() < 4 {
+                return None;
+            }
+            Some(PoolProfile {
+                image: parts[0].trim().to_string(),
+                memory_mb: parts[1].trim().parse().unwrap_or(512),
+                cpu: parts[2].trim().parse().unwrap_or(1.0),
+                network_enabled: parts[3].trim() == "true",
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -86,6 +142,14 @@ mod tests {
             "III_ALLOWED_IMAGES",
             "III_WORKSPACE_DIR",
             "III_MAX_CMD_TIMEOUT",
+            "III_POOL_SIZE",
+            "III_POOL_REPLENISH",
+            "III_POOL_PROFILES",
+            "III_RATE_LIMIT_ENABLED",
+            "III_RATE_TOKEN_RPM",
+            "III_RATE_TOKEN_BURST",
+            "III_RATE_SBX_EXEC_PM",
+            "III_RATE_SBX_FS_PM",
         ];
         for var in vars {
             unsafe { env::remove_var(var) };
@@ -112,6 +176,13 @@ mod tests {
         assert_eq!(cfg.allowed_images, vec!["*"]);
         assert_eq!(cfg.workspace_dir, "/workspace");
         assert_eq!(cfg.max_command_timeout, 300);
+        assert_eq!(cfg.warm_pool_size, 0);
+        assert_eq!(cfg.warm_pool_replenish_interval, "*/30 * * * * *");
+        assert_eq!(cfg.warm_pool_profiles.len(), 1);
+        assert_eq!(cfg.warm_pool_profiles[0].image, "python:3.12-slim");
+        assert!(!cfg.rate_limit.enabled);
+        assert_eq!(cfg.rate_limit.token_requests_per_minute, 600);
+        assert_eq!(cfg.rate_limit.token_burst, 100);
     }
 
     #[test]
