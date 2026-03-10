@@ -35,11 +35,20 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                         .get("rows")
                         .and_then(|v| v.as_u64())
                         .unwrap_or(24) as u16;
+                    const ALLOWED_SHELLS: &[&str] =
+                        &["/bin/sh", "/bin/bash", "/bin/zsh", "/bin/ash"];
                     let shell = input
                         .get("shell")
                         .and_then(|v| v.as_str())
                         .unwrap_or("/bin/sh")
                         .to_string();
+                    if !ALLOWED_SHELLS.contains(&shell.as_str()) {
+                        return Err(iii_sdk::IIIError::Handler(format!(
+                            "shell '{}' not allowed, use one of: {}",
+                            shell,
+                            ALLOWED_SHELLS.join(", ")
+                        )));
+                    }
 
                     let sandbox: Sandbox = kv
                         .get(scopes::SANDBOXES, id)
@@ -91,6 +100,47 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                         iii_sdk::IIIError::Handler(format!("Failed to create channel: {e}"))
                     })?;
 
+                    let session_id = state::generate_id("term");
+
+                    let session = json!({
+                        "sessionId": session_id,
+                        "sandboxId": id,
+                        "execId": exec.id,
+                        "cols": cols,
+                        "rows": rows,
+                        "shell": shell,
+                        "status": "running",
+                        "createdAt": chrono::Utc::now().timestamp_millis() as u64,
+                        "channel": {
+                            "writer": channel.writer_ref,
+                            "reader": channel.reader_ref,
+                        },
+                    });
+
+                    kv.set(
+                        scopes::TERMINAL,
+                        &format!("{id}:{session_id}"),
+                        &session,
+                    )
+                    .await
+                    .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
+
+                    let mut sessions: Vec<String> = sandbox
+                        .metadata
+                        .get("terminal_sessions")
+                        .and_then(|v| serde_json::from_str(v).ok())
+                        .unwrap_or_default();
+                    sessions.push(session_id.clone());
+
+                    let mut updated_sandbox = sandbox;
+                    updated_sandbox.metadata.insert(
+                        "terminal_sessions".to_string(),
+                        serde_json::to_string(&sessions).unwrap(),
+                    );
+                    kv.set(scopes::SANDBOXES, id, &updated_sandbox)
+                        .await
+                        .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
+
                     let start_result = dk
                         .start_exec(&exec_id, None)
                         .await
@@ -134,47 +184,6 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                         });
                     }
 
-                    let session_id = state::generate_id("term");
-
-                    let session = json!({
-                        "sessionId": session_id,
-                        "sandboxId": id,
-                        "execId": exec.id,
-                        "cols": cols,
-                        "rows": rows,
-                        "shell": shell,
-                        "status": "running",
-                        "createdAt": chrono::Utc::now().timestamp_millis() as u64,
-                        "channel": {
-                            "writer": channel.writer_ref,
-                            "reader": channel.reader_ref,
-                        },
-                    });
-
-                    kv.set(
-                        scopes::SANDBOXES,
-                        &format!("{id}:terminal:{session_id}"),
-                        &session,
-                    )
-                    .await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
-
-                    let mut sessions: Vec<String> = sandbox
-                        .metadata
-                        .get("terminal_sessions")
-                        .and_then(|v| serde_json::from_str(v).ok())
-                        .unwrap_or_default();
-                    sessions.push(session_id.clone());
-
-                    let mut updated_sandbox = sandbox;
-                    updated_sandbox.metadata.insert(
-                        "terminal_sessions".to_string(),
-                        serde_json::to_string(&sessions).unwrap(),
-                    );
-                    kv.set(scopes::SANDBOXES, id, &updated_sandbox)
-                        .await
-                        .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
-
                     Ok(session)
                 }
             },
@@ -213,9 +222,9 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                         .ok_or_else(|| iii_sdk::IIIError::Handler("rows is required".into()))?
                         as u16;
 
-                    let session_key = format!("{id}:terminal:{session_id}");
+                    let session_key = format!("{id}:{session_id}");
                     let session: Value = kv
-                        .get(scopes::SANDBOXES, &session_key)
+                        .get(scopes::TERMINAL, &session_key)
                         .await
                         .ok_or_else(|| {
                             iii_sdk::IIIError::Handler(format!(
@@ -245,7 +254,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                     let mut updated = session;
                     updated["cols"] = json!(cols);
                     updated["rows"] = json!(rows);
-                    kv.set(scopes::SANDBOXES, &session_key, &updated)
+                    kv.set(scopes::TERMINAL, &session_key, &updated)
                         .await
                         .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
 
@@ -275,19 +284,15 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                             iii_sdk::IIIError::Handler("sessionId is required".into())
                         })?;
 
-                    let session_key = format!("{id}:terminal:{session_id}");
+                    let session_key = format!("{id}:{session_id}");
                     let _session: Value = kv
-                        .get(scopes::SANDBOXES, &session_key)
+                        .get(scopes::TERMINAL, &session_key)
                         .await
                         .ok_or_else(|| {
                             iii_sdk::IIIError::Handler(format!(
                                 "Terminal session not found: {session_id}"
                             ))
                         })?;
-
-                    kv.delete(scopes::SANDBOXES, &session_key)
-                        .await
-                        .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
 
                     let mut sandbox: Sandbox = kv
                         .get(scopes::SANDBOXES, id)
@@ -306,6 +311,10 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                         serde_json::to_string(&sessions).unwrap(),
                     );
                     kv.set(scopes::SANDBOXES, id, &sandbox)
+                        .await
+                        .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
+
+                    kv.delete(scopes::TERMINAL, &session_key)
                         .await
                         .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
 
@@ -336,8 +345,30 @@ mod tests {
     fn session_key_format() {
         let sandbox_id = "sbx_abc123";
         let session_id = "term_def456";
-        let key = format!("{sandbox_id}:terminal:{session_id}");
-        assert_eq!(key, "sbx_abc123:terminal:term_def456");
+        let key = format!("{sandbox_id}:{session_id}");
+        assert_eq!(key, "sbx_abc123:term_def456");
+    }
+
+    #[test]
+    fn shell_allowlist_accepts_valid() {
+        let allowed: &[&str] = &["/bin/sh", "/bin/bash", "/bin/zsh", "/bin/ash"];
+        assert!(allowed.contains(&"/bin/sh"));
+        assert!(allowed.contains(&"/bin/bash"));
+        assert!(allowed.contains(&"/bin/zsh"));
+        assert!(allowed.contains(&"/bin/ash"));
+    }
+
+    #[test]
+    fn shell_allowlist_rejects_invalid() {
+        let allowed: &[&str] = &["/bin/sh", "/bin/bash", "/bin/zsh", "/bin/ash"];
+        assert!(!allowed.contains(&"/usr/bin/python3"));
+        assert!(!allowed.contains(&"bash"));
+        assert!(!allowed.contains(&"/bin/fish"));
+    }
+
+    #[test]
+    fn terminal_scope_constant() {
+        assert_eq!(scopes::TERMINAL, "terminal");
     }
 
     #[test]

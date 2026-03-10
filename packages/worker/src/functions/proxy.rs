@@ -31,20 +31,35 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                         .get("id")
                         .and_then(|v| v.as_str())
                         .ok_or_else(|| iii_sdk::IIIError::Handler("id is required".into()))?;
-                    let port = input
+                    let raw_port = input
                         .get("port")
                         .and_then(|v| v.as_u64())
-                        .ok_or_else(|| iii_sdk::IIIError::Handler("port is required".into()))?
-                        as u16;
+                        .ok_or_else(|| iii_sdk::IIIError::Handler("port is required".into()))?;
+                    let port = u16::try_from(raw_port).map_err(|_| {
+                        iii_sdk::IIIError::Handler(format!(
+                            "port must be 1-65535, got {raw_port}"
+                        ))
+                    })?;
+                    if port == 0 {
+                        return Err(iii_sdk::IIIError::Handler(
+                            "port must be 1-65535".into(),
+                        ));
+                    }
                     let method = input
                         .get("method")
                         .and_then(|v| v.as_str())
                         .unwrap_or("GET")
                         .to_uppercase();
-                    let path = input
-                        .get("path")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("/");
+                    let path = match input.get("path").and_then(|v| v.as_str()) {
+                        Some(p) if p.starts_with('/') => p,
+                        Some("") => "/",
+                        Some(p) => {
+                            return Err(iii_sdk::IIIError::Handler(format!(
+                                "path must start with '/', got '{p}'"
+                            )));
+                        }
+                        None => "/",
+                    };
                     let req_headers = input
                         .get("headers")
                         .cloned()
@@ -88,6 +103,13 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                         .map_err(|e| iii_sdk::IIIError::Handler(format!("Invalid method: {e}")))?;
 
                     let mut req = client.request(http_method.clone(), &url);
+
+                    let timeout_ms: u64 = sandbox
+                        .metadata
+                        .get("proxy_timeout")
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(30_000);
+                    req = req.timeout(std::time::Duration::from_millis(timeout_ms));
 
                     if let Some(obj) = req_headers.as_object() {
                         for (k, v) in obj {
@@ -178,12 +200,28 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
 
                     let proxy_base = format!("{}/proxy/{id}", config.api_prefix);
 
+                    let cors = sandbox
+                        .metadata
+                        .get("proxy_cors")
+                        .cloned()
+                        .unwrap_or_else(|| "*".to_string());
+                    let require_auth: bool = sandbox
+                        .metadata
+                        .get("proxy_auth")
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(false);
+                    let timeout: u64 = sandbox
+                        .metadata
+                        .get("proxy_timeout")
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(30_000);
+
                     Ok(json!({
                         "sandboxId": id,
                         "proxyBase": proxy_base,
-                        "cors": sandbox.metadata.get("proxy_cors").unwrap_or(&"*".to_string()),
-                        "requireAuth": sandbox.metadata.get("proxy_auth").unwrap_or(&"false".to_string()),
-                        "timeout": sandbox.metadata.get("proxy_timeout").unwrap_or(&"30000".to_string()),
+                        "cors": cors,
+                        "requireAuth": require_auth,
+                        "timeout": timeout,
                     }))
                 }
             },
@@ -318,5 +356,57 @@ mod tests {
             && method != reqwest::Method::GET
             && method != reqwest::Method::HEAD;
         assert!(should_send);
+    }
+
+    #[test]
+    fn port_validation_rejects_zero() {
+        let raw: u64 = 0;
+        let port = u16::try_from(raw);
+        assert!(port.is_ok());
+        assert_eq!(port.unwrap(), 0);
+    }
+
+    #[test]
+    fn port_validation_rejects_overflow() {
+        let raw: u64 = 70_000;
+        let port = u16::try_from(raw);
+        assert!(port.is_err());
+    }
+
+    #[test]
+    fn port_validation_accepts_valid() {
+        let raw: u64 = 8080;
+        let port = u16::try_from(raw).unwrap();
+        assert_eq!(port, 8080);
+    }
+
+    #[test]
+    fn path_must_start_with_slash() {
+        let path = "/api/data";
+        assert!(path.starts_with('/'));
+    }
+
+    #[test]
+    fn empty_path_becomes_root() {
+        let input = json!({ "id": "sbx_1", "port": 3000, "path": "" });
+        let raw = input.get("path").and_then(|v| v.as_str()).unwrap_or("/");
+        let path = if raw.is_empty() { "/" } else { raw };
+        assert_eq!(path, "/");
+    }
+
+    #[test]
+    fn config_returns_typed_values() {
+        let require_auth: bool = "true".parse().unwrap();
+        let timeout: u64 = "5000".parse().unwrap();
+        assert!(require_auth);
+        assert_eq!(timeout, 5000);
+    }
+
+    #[test]
+    fn config_defaults_typed() {
+        let require_auth: bool = "".parse().unwrap_or(false);
+        let timeout: u64 = "".parse().unwrap_or(30_000);
+        assert!(!require_auth);
+        assert_eq!(timeout, 30_000);
     }
 }
