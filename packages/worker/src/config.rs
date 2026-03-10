@@ -58,8 +58,11 @@ impl EngineConfig {
         let mut cfg = Self {
             engine_url: env::var("III_ENGINE_URL")
                 .unwrap_or_else(|_| "ws://localhost:49134".to_string()),
-            worker_name: env::var("III_WORKER_NAME")
-                .unwrap_or_else(|_| "iii-sandbox".to_string()),
+            worker_name: env::var("III_WORKER_NAME").unwrap_or_else(|_| {
+                let hostname = env::var("HOSTNAME")
+                    .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string()[..8].to_string());
+                format!("iii-sandbox-{hostname}")
+            }),
             rest_port: parse_int_or_default("III_REST_PORT", 3111) as u16,
             api_prefix: env::var("III_API_PREFIX")
                 .unwrap_or_else(|_| "sandbox".to_string()),
@@ -183,7 +186,7 @@ mod tests {
         clear_all_iii_vars();
         let cfg = EngineConfig::from_env();
         assert_eq!(cfg.engine_url, "ws://localhost:49134");
-        assert_eq!(cfg.worker_name, "iii-sandbox");
+        assert!(cfg.worker_name.starts_with("iii-sandbox-"), "worker_name should be auto-generated: {}", cfg.worker_name);
         assert_eq!(cfg.rest_port, 3111);
         assert_eq!(cfg.api_prefix, "sandbox");
         assert!(cfg.auth_token.is_none());

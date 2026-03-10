@@ -172,8 +172,19 @@ pub fn register(iii: &Arc<III>, config: &EngineConfig, limiter: &Arc<RateLimiter
                 }
 
                 if scoped {
-                    if let Some(sandbox_id) = merged.get("id").and_then(|v| v.as_str()) {
-                        let sandbox_id = sandbox_id.to_string();
+                    let sandbox_id = if let Some(sid) = merged.get("id").and_then(|v| v.as_str()) {
+                        Some(sid.to_string())
+                    } else if let Some(snap_id) = merged.get("snapshotId").and_then(|v| v.as_str()) {
+                        if let Ok(snap_val) = iii2.trigger("snapshot::get-owner", json!({"snapshotId": snap_id})).await {
+                            snap_val.get("sandboxId").and_then(|v| v.as_str()).map(|s| s.to_string())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+                    if let Some(sandbox_id) = sandbox_id {
                         if let Ok(sbx_val) = iii2.trigger("sandbox::get", json!({"id": sandbox_id})).await {
                             if let Some(owner) = sbx_val.get("workerId").and_then(|v| v.as_str()) {
                                 if owner != cfg.worker_name {
@@ -501,8 +512,8 @@ mod tests {
         for (fn_id, _, path, _) in ROUTES {
             if SANDBOX_SCOPED_FUNCTIONS.contains(fn_id) {
                 assert!(
-                    path.contains(":id"),
-                    "Sandbox-scoped function {fn_id} route {path} should contain :id"
+                    path.contains(":id") || path.contains(":snapshotId"),
+                    "Sandbox-scoped function {fn_id} route {path} should contain :id or :snapshotId"
                 );
             }
         }

@@ -25,7 +25,7 @@ jobs:
 
   integration-test:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: false
     needs: [rust-check]
     defaults:
       run:

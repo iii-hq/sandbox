@@ -187,8 +187,8 @@ def run_scenario(client: httpx.Client, scenario: dict, config: dict) -> dict:
         if ctx["sandbox_id"]:
             try:
                 http_delete(client, ctx["base_url"], f"{ctx['prefix']}/sandboxes/{ctx['sandbox_id']}", ctx["token"])
-            except Exception:
-                pass
+            except Exception as cleanup_err:
+                print(f"[WARN] Cleanup failed for {ctx['sandbox_id']}: {cleanup_err}")
         return {"name": scenario["name"], "pass": False, "error": str(e)}
 
 

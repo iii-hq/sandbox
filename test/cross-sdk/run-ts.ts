@@ -107,8 +107,6 @@ async function runStep(
   step: Step,
   ctx: { baseUrl: string; prefix: string; token: string; sandboxId: string },
 ): Promise<string> {
-  const base = `${ctx.baseUrl}${ctx.prefix}`;
-  const sbx = () => `${base}/sandboxes/${ctx.sandboxId}`;
   let result: Record<string, unknown> = {};
 
   switch (step.action) {
@@ -230,7 +228,9 @@ async function runScenario(scenario: Scenario, config: Config): Promise<{ name: 
     if (ctx.sandboxId) {
       try {
         await httpDelete(ctx.baseUrl, `${ctx.prefix}/sandboxes/${ctx.sandboxId}`, ctx.token);
-      } catch {}
+      } catch (cleanupErr) {
+        console.warn(`[WARN] Cleanup failed for ${ctx.sandboxId}:`, cleanupErr);
+      }
     }
     return { name: scenario.name, pass: false, error: (err as Error).message };
   }

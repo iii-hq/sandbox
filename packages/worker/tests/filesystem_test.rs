@@ -82,12 +82,11 @@ async fn delete_file() {
     let read_failed = read_status >= 400
         || read_body.get("body")
             .and_then(|b| b.get("error"))
-            .is_some()
-        || read_body.get("body")
-            .and_then(|b| b.as_str())
-            .map(|s| s.is_empty())
-            .unwrap_or(false);
-    assert!(read_failed, "Read after delete should fail or return empty, got status={read_status}");
+            .is_some();
+    assert!(
+        read_failed,
+        "Read after delete should fail, got status={read_status}, body={read_body}"
+    );
 
     ctx.cleanup(&id).await;
 }

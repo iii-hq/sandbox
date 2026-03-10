@@ -53,19 +53,10 @@ struct RunContext {
 }
 
 fn load_scenarios() -> ScenarioFile {
-    let exe_path = env::current_exe().unwrap_or_default();
-    let manifest_dir = exe_path
-        .parent()
-        .and_then(|p| p.parent())
-        .and_then(|p| p.parent())
-        .map(|p| p.to_path_buf())
+    let manifest_dir = option_env!("CARGO_MANIFEST_DIR")
+        .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-
-    let scenario_path = if manifest_dir.join("scenario.json").exists() {
-        manifest_dir.join("scenario.json")
-    } else {
-        PathBuf::from("scenario.json")
-    };
+    let scenario_path = manifest_dir.join("scenario.json");
 
     let raw = fs::read_to_string(&scenario_path)
         .unwrap_or_else(|_| panic!("Failed to read {}", scenario_path.display()));
@@ -317,12 +308,14 @@ async fn run_scenario(client: &Client, scenario: &Scenario, config: &Config) -> 
     for step in &scenario.steps {
         if let Err(e) = run_step(client, step, &mut ctx).await {
             if !ctx.sandbox_id.is_empty() {
-                let _ = http_delete(
+                if let Err(cleanup_err) = http_delete(
                     client,
                     &ctx.base_url,
                     &format!("{}/sandboxes/{}", ctx.prefix, ctx.sandbox_id),
                     &ctx.token,
-                ).await;
+                ).await {
+                    eprintln!("[WARN] Cleanup failed for {}: {}", ctx.sandbox_id, cleanup_err);
+                }
             }
             return ScenarioResult {
                 name: scenario.name.clone(),

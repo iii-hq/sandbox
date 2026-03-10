@@ -50,6 +50,7 @@ pub const SANDBOX_SCOPED_FUNCTIONS: &[&str] = &[
     "port::list",
     "port::unexpose",
     "snapshot::create",
+    "snapshot::clone",
     "snapshot::list",
     "snapshot::restore",
     "interp::execute",
@@ -153,11 +154,12 @@ pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, conf
                     let alive: Vec<&WorkerInfo> = workers
                         .iter()
                         .filter(|w| now.saturating_sub(w.last_heartbeat) < HEARTBEAT_TIMEOUT_MS)
+                        .filter(|w| w.max_sandboxes == 0 || w.active_sandboxes < w.max_sandboxes)
                         .collect();
 
                     if alive.is_empty() {
                         return Err(iii_sdk::IIIError::Handler(
-                            "No alive workers available".into(),
+                            "No worker capacity available".into(),
                         ));
                     }
 
@@ -296,13 +298,15 @@ pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, conf
 
     {
         let kv = kv.clone();
+        let rt = rt.clone();
         let cfg = config.clone();
         iii.register_function_with_description(
             "worker::migrate-ownership",
-            "Backfill worker_id on sandboxes that lack it",
+            "Backfill worker_id on local sandboxes that lack it",
             move |_input: Value| {
                 let kv = kv.clone();
                 let cfg = cfg.clone();
+                let rt = rt.clone();
                 async move {
                     let sandboxes: Vec<Value> = kv.list(scopes::SANDBOXES).await;
                     let mut migrated = 0u64;
@@ -322,6 +326,11 @@ pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, conf
                             Some(id) => id.to_string(),
                             None => continue,
                         };
+
+                        let container_name = format!("iii-sbx-{sbx_id}");
+                        if !rt.sandbox_exists(&container_name).await.unwrap_or(false) {
+                            continue;
+                        }
 
                         let mut updated = sbx.clone();
                         if let Some(obj) = updated.as_object_mut() {
@@ -784,6 +793,7 @@ mod tests {
             "fs::delete",
             "fs::list",
             "snapshot::create",
+            "snapshot::clone",
             "snapshot::list",
             "snapshot::restore",
             "metrics::sandbox",

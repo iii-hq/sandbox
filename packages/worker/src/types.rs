@@ -166,6 +166,12 @@ pub struct Snapshot {
     pub image_id: String,
     pub size: u64,
     pub created_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<SandboxConfig>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entrypoint: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -557,6 +563,9 @@ mod tests {
             image_id: "sha256:abc".to_string(),
             size: 50_000_000,
             created_at: 2000,
+            config: None,
+            entrypoint: None,
+            metadata: None,
         };
         let json = serde_json::to_value(&snap).unwrap();
         assert_eq!(json["id"], "snap_1");

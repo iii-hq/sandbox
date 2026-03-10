@@ -20,6 +20,12 @@ Verifies all 3 SDKs (TypeScript, Python, Rust) produce identical results against
 
 ## Running
 
+All commands should be run from the `test/cross-sdk/` directory:
+
+```sh
+cd test/cross-sdk
+```
+
 ### TypeScript
 
 ```sh
@@ -36,7 +42,7 @@ python run-python.py
 ### Rust
 
 ```sh
-cargo run --manifest-path Cargo.toml
+cargo run
 ```
 
 ## Environment Variables
@@ -50,7 +56,7 @@ cargo run --manifest-path Cargo.toml
 
 Each runner prints:
 
-```
+```text
 Running 5 scenarios against http://localhost:3111
 
 [PASS] sandbox-lifecycle

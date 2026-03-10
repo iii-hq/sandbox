@@ -42,6 +42,9 @@ pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, conf
                     image_id: image_id.clone(),
                     size,
                     created_at: now_ms(),
+                    config: Some(sandbox.config.clone()),
+                    entrypoint: sandbox.entrypoint.clone(),
+                    metadata: Some(sandbox.metadata.clone()),
                 };
                 kv.set(scopes::SNAPSHOTS, &snapshot_id, &snapshot).await
                     .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
@@ -115,6 +118,20 @@ pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, conf
     }
 
     {
+        let kv = kv.clone();
+        iii.register_function_with_description("snapshot::get-owner", "Get snapshot owner sandbox info for routing", move |input: Value| {
+            let kv = kv.clone();
+            async move {
+                let snapshot_id = input.get("snapshotId").and_then(|v| v.as_str())
+                    .ok_or_else(|| iii_sdk::IIIError::Handler("snapshotId is required".into()))?;
+                let snapshot: Snapshot = kv.get(scopes::SNAPSHOTS, snapshot_id).await
+                    .ok_or_else(|| iii_sdk::IIIError::Handler(format!("Snapshot not found: {snapshot_id}")))?;
+                Ok(json!({ "sandboxId": snapshot.sandbox_id }))
+            }
+        });
+    }
+
+    {
         let kv = kv.clone(); let rt = rt.clone(); let cfg = config.clone();
         iii.register_function_with_description("snapshot::clone", "Create a new sandbox from an existing snapshot", move |input: Value| {
             let kv = kv.clone(); let rt = rt.clone(); let cfg = cfg.clone();
@@ -125,17 +142,25 @@ pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, conf
 
                 let snapshot: Snapshot = kv.get(scopes::SNAPSHOTS, snapshot_id).await
                     .ok_or_else(|| iii_sdk::IIIError::Handler(format!("Snapshot not found: {snapshot_id}")))?;
-                let source: Sandbox = kv.get(scopes::SANDBOXES, &snapshot.sandbox_id).await
-                    .ok_or_else(|| iii_sdk::IIIError::Handler(format!("Source sandbox not found: {}", snapshot.sandbox_id)))?;
+
+                let base_config = if let Some(ref cfg_stored) = snapshot.config {
+                    cfg_stored.clone()
+                } else {
+                    let source: Sandbox = kv.get(scopes::SANDBOXES, &snapshot.sandbox_id).await
+                        .ok_or_else(|| iii_sdk::IIIError::Handler(format!("Source sandbox not found: {}", snapshot.sandbox_id)))?;
+                    source.config.clone()
+                };
+                let base_entrypoint = snapshot.entrypoint.clone();
+                let base_metadata = snapshot.metadata.clone().unwrap_or_default();
 
                 let new_id = generate_id("sbx");
-                let mut cloned_config = source.config.clone();
+                let mut cloned_config = base_config;
                 cloned_config.image = snapshot.image_id.clone();
-                rt.create_sandbox(&new_id, &cloned_config, source.entrypoint.as_deref()).await
+                rt.create_sandbox(&new_id, &cloned_config, base_entrypoint.as_deref()).await
                     .map_err(iii_sdk::IIIError::Handler)?;
 
                 let now = now_ms();
-                let timeout = source.config.timeout.unwrap_or(cfg.default_timeout);
+                let timeout = cloned_config.timeout.unwrap_or(cfg.default_timeout);
                 let sandbox = Sandbox {
                     id: new_id.clone(),
                     name: name.unwrap_or(&new_id).to_string(),
@@ -144,8 +169,8 @@ pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, conf
                     created_at: now,
                     expires_at: now + timeout * 1000,
                     config: cloned_config,
-                    metadata: source.metadata.clone(),
-                    entrypoint: source.entrypoint.clone(),
+                    metadata: base_metadata,
+                    entrypoint: base_entrypoint,
                     worker_id: Some(cfg.worker_name.clone()),
                 };
 
