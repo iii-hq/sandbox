@@ -266,7 +266,7 @@ async fn try_direct_proxy(ctx: &ProxyContext<'_>) -> Result<Value, iii_sdk::IIIE
 
 async fn proxy_via_exec(ctx: &ProxyContext<'_>) -> Result<Value, iii_sdk::IIIError> {
     let max_time_secs = (ctx.timeout_ms / 1000).max(1);
-    let connect_timeout_secs = (max_time_secs / 6).max(1).min(10);
+    let connect_timeout_secs = (max_time_secs / 6).clamp(1, 10);
 
     let mut argv = vec![
         "curl".to_string(),
@@ -718,7 +718,7 @@ mod tests {
         timeout_ms: u64,
     ) -> Vec<String> {
         let max_time_secs = (timeout_ms / 1000).max(1);
-        let connect_timeout_secs = (max_time_secs / 6).max(1).min(10);
+        let connect_timeout_secs = (max_time_secs / 6).clamp(1, 10);
         let http_method: reqwest::Method = method.parse().unwrap();
 
         let mut argv = vec![
