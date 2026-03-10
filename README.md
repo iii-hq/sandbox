@@ -24,10 +24,11 @@ Secure, isolated Docker sandboxes for code execution. Built on [iii-engine](http
   ┌─────────────────────────────────────────┐
   │        Worker  (iii-sdk, Rust)          │
   │                                         │
-  │  84 Functions · 86 Endpoints · 39 Tools │
+  │  97 Functions · 91 Endpoints · 39 Tools │
   │  sandbox · exec · fs · git · env · proc │
   │  snapshot · template · port · queue     │
   │  event · stream · monitor · volume · net│
+  │  terminal · proxy · warmpool            │
   └────────────────┬────────────────────────┘
                    ▼
   ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
@@ -72,7 +73,7 @@ pnpm build
 
 | Package | Description | Entry |
 |---------|-------------|-------|
-| `iii-sandbox-worker` | Rust binary — 84 functions, 93 triggers, Docker integration | `packages/worker` |
+| `iii-sandbox-worker` | Rust binary — 97 functions, 100 triggers, Docker integration | `packages/worker` |
 | `@iii-sandbox/sdk` | Zero-dependency client library for Node.js | `packages/sdk` |
 | `iii-sandbox` (Python) | Async Python client (httpx + pydantic) | `packages/sdk-python` |
 | `iii-sandbox` (Rust) | Async Rust client (reqwest + serde) | `packages/sdk-rust` |
@@ -129,6 +130,15 @@ await sbx.restore(snap.snapshotId)
 // Port forwarding
 await sbx.ports.expose(8080, 3000)
 const ports = await sbx.ports.list()
+
+// Interactive terminal (PTY via iii channels)
+const session = await sbx.terminal.create({ shell: "/bin/bash", cols: 120, rows: 40 })
+console.log(session.sessionId, session.channel)
+await sbx.terminal.resize(session.sessionId, 200, 50)
+await sbx.terminal.close(session.sessionId)
+
+// HTTP proxy (forward requests to container ports)
+const proxyUrl = sbx.ports.getProxyUrl(8080)
 
 // Lifecycle
 await sbx.pause()
@@ -426,6 +436,21 @@ Connect any AI agent (Claude, Cursor, etc.) to sandboxes via Model Context Proto
 | `GET` | `/sandbox/sandboxes/:id/ports` | List exposed ports |
 | `DELETE` | `/sandbox/sandboxes/:id/ports` | Unexpose port |
 
+### Interactive Terminal
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/sandbox/sandboxes/:id/terminal` | Create terminal session (PTY via iii channels) |
+| `POST` | `/sandbox/sandboxes/:id/terminal/:sessionId/resize` | Resize terminal |
+| `DELETE` | `/sandbox/sandboxes/:id/terminal/:sessionId` | Close terminal session |
+
+### HTTP Proxy
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/sandbox/proxy/:id/:port` | Forward HTTP request to container port |
+| `POST` | `/sandbox/sandboxes/:id/proxy/config` | Get/set proxy config (CORS, auth, timeout) |
+
 ### Code Interpreter
 
 | Method | Endpoint | Description |
@@ -502,7 +527,7 @@ Connect any AI agent (Claude, Cursor, etc.) to sandboxes via Model Context Proto
 
 ## Worker Architecture
 
-The worker registers **84 iii-engine functions** across 20 modules. Compiles to a **6.6 MB release binary** using bollard for Docker integration:
+The worker registers **97 iii-engine functions** across 23 modules. Compiles to a **6.6 MB release binary** using bollard for Docker integration:
 
 ```
 functions/
@@ -525,11 +550,14 @@ functions/
 ├── observability.rs 4 functions   Traces, metrics, clear
 ├── stream.rs        3 functions   Real-time log/metrics/event streaming (SSE)
 ├── monitor.rs       5 functions   Resource alerts with auto-actions
-└── volume.rs        5 functions   Persistent volume management
+├── volume.rs        5 functions   Persistent volume management
+├── terminal.rs      3 functions   Interactive PTY sessions via iii channels
+├── proxy.rs         2 functions   HTTP proxy with exec-based fallback
+└── warmpool.rs      4 functions   Pre-warmed container pool management
 ```
 
 **3 trigger types**:
-- **HTTP** — 86 REST endpoints on port 3111
+- **HTTP** — 91 REST endpoints on port 3111
 - **Cron** — TTL sweep every 30 seconds (expires idle sandboxes)
 - **Queue** — 8 queue triggers for `sandbox.created`, `sandbox.killed`, `sandbox.expired` and other events
 
@@ -546,6 +574,8 @@ functions/
 - `events` — event history
 - `traces` — observability traces
 - `metrics` — aggregated metrics
+- `terminal` — interactive terminal sessions
+- `pool` — warm pool container tracking
 
 ## Security
 
@@ -562,7 +592,10 @@ Input validation:
 - **Command wrapping** — all commands execute inside `sh -c` with no host access
 - **Auth** — optional Bearer token authentication (`III_AUTH_TOKEN`)
 - **Shell injection prevention** — args quoted and sanitized for git, chmod, and search operations
+- **Terminal shell allowlist** — only `/bin/sh`, `/bin/bash`, `/bin/zsh`, `/bin/ash` allowed
+- **Proxy injection prevention** — exec-based proxy uses argv (no shell), `--data-raw`, `--globoff`
 - **Output capping** — stdout/stderr limited to prevent memory exhaustion
+- **Rate limiting** — per-token request limits (configurable via `III_RATE_LIMIT_ENABLED`)
 
 ## Supported Languages
 
@@ -603,7 +636,7 @@ modules:
 | `III_ENGINE_URL` | `ws://localhost:49134` | iii-engine WebSocket |
 | `III_WORKER_NAME` | `iii-sandbox` | Worker name |
 | `III_REST_PORT` | `3111` | REST API port |
-| `III_API_PREFIX` | `/sandbox` | API path prefix |
+| `III_API_PREFIX` | `sandbox` | API path prefix |
 | `III_AUTH_TOKEN` | — | Bearer auth token |
 | `III_MAX_SANDBOXES` | `50` | Max concurrent sandboxes |
 | `III_DEFAULT_TIMEOUT` | `3600` | Sandbox TTL (seconds) |
@@ -612,6 +645,8 @@ modules:
 | `III_ALLOWED_IMAGES` | `*` | Allowed Docker images (comma-separated) |
 | `III_WORKSPACE_DIR` | `/workspace` | Container working directory |
 | `III_MAX_CMD_TIMEOUT` | `300` | Max command timeout (seconds) |
+| `III_POOL_SIZE` | `0` | Warm pool size (pre-warmed containers) |
+| `III_RATE_LIMIT_ENABLED` | `false` | Enable per-token rate limiting |
 
 ## Repository Layout
 
@@ -627,8 +662,8 @@ iii-sandbox/
 │   │       ├── state.rs      KV wrapper over trigger("state::*")
 │   │       ├── auth.rs       Token validation + path/command security
 │   │       ├── types.rs      All domain types (Sandbox, ExecResult, etc.)
-│   │       ├── functions/    20 modules — 84 registered functions
-│   │       ├── triggers/     HTTP (82), cron (1), queue (8) triggers
+│   │       ├── functions/    23 modules — 97 registered functions
+│   │       ├── triggers/     HTTP (91), cron (1), queue (8) triggers
 │   │       └── lifecycle/    TTL sweep, health check, graceful shutdown
 │   ├── sdk/              TypeScript client library (zero-dep)
 │   │   └── src/              18 modules (client, sandbox, 16 managers)
@@ -659,14 +694,14 @@ cd packages/worker && cargo run   # Start Rust engine
 pnpm test             # Run TypeScript SDK/CLI/MCP tests (~293)
 pnpm lint             # TypeScript type checking
 
-cd packages/worker && cargo test                          # Rust engine tests (205)
+cd packages/worker && cargo test                          # Rust engine tests (296)
 cd packages/sdk-python && pip install -e ".[dev]" && pytest    # Python SDK tests (150)
 cd packages/sdk-rust && cargo test                             # Rust SDK tests (32)
 ```
 
 ### Test Suite
 
-**~680 total tests** across TypeScript, Python, and Rust:
+**~771 total tests** across TypeScript, Python, and Rust:
 
 | Language | Files | Tests | Tool |
 |----------|-------|-------|------|
