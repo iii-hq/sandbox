@@ -465,49 +465,49 @@ pub async fn container_top(
     Ok(serde_json::to_value(top).unwrap_or(Value::Null))
 }
 
-pub fn container_name_for_sandbox(id: &str) -> String {
-    format!("iii-sbx-{id}")
-}
-
-pub fn parse_stat_line(line: &str) -> Option<FileMetadata> {
-    let parts: Vec<&str> = line.split('\t').collect();
-    if parts.len() < 7 {
-        return None;
-    }
-    Some(FileMetadata {
-        path: parts[0].to_string(),
-        size: parts[1].parse().unwrap_or(0),
-        permissions: parts[2].to_string(),
-        owner: parts[3].to_string(),
-        group: parts[4].to_string(),
-        is_directory: parts[5] == "directory",
-        is_symlink: parts[5] == "symbolic link",
-        modified_at: parts[6].parse::<u64>().unwrap_or(0) * 1000,
-    })
-}
-
-pub fn parse_dir_entry(line: &str, base_path: &str) -> Option<FileInfo> {
-    let parts: Vec<&str> = line.split('\t').collect();
-    if parts.len() < 4 {
-        return None;
-    }
-    let name = parts[0].to_string();
-    let size = parts[1].parse().unwrap_or(0);
-    let mtime = parts[2].parse::<f64>().unwrap_or(0.0);
-    let file_type = parts[3];
-    let file_path = format!("{}/{}", base_path.trim_end_matches('/'), name);
-    Some(FileInfo {
-        name,
-        path: file_path,
-        size,
-        is_directory: file_type == "d",
-        modified_at: (mtime * 1000.0) as u64,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn container_name_for_sandbox(id: &str) -> String {
+        format!("iii-sbx-{id}")
+    }
+
+    fn parse_stat_line(line: &str) -> Option<FileMetadata> {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() < 7 {
+            return None;
+        }
+        Some(FileMetadata {
+            path: parts[0].to_string(),
+            size: parts[1].parse().unwrap_or(0),
+            permissions: parts[2].to_string(),
+            owner: parts[3].to_string(),
+            group: parts[4].to_string(),
+            is_directory: parts[5] == "directory",
+            is_symlink: parts[5] == "symbolic link",
+            modified_at: parts[6].parse::<u64>().unwrap_or(0) * 1000,
+        })
+    }
+
+    fn parse_dir_entry(line: &str, base_path: &str) -> Option<FileInfo> {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() < 4 {
+            return None;
+        }
+        let name = parts[0].to_string();
+        let size = parts[1].parse().unwrap_or(0);
+        let mtime = parts[2].parse::<f64>().unwrap_or(0.0);
+        let file_type = parts[3];
+        let file_path = format!("{}/{}", base_path.trim_end_matches('/'), name);
+        Some(FileInfo {
+            name,
+            path: file_path,
+            size,
+            is_directory: file_type == "d",
+            modified_at: (mtime * 1000.0) as u64,
+        })
+    }
 
     #[test]
     fn container_name_format() {

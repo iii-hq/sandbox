@@ -28,7 +28,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                 let cn = format!("iii-sbx-{id}");
                 let cmd = vec!["sh".into(), "-c".into(), format!("printenv \"{key}\"")];
                 let result = exec_in_container(&dk, &cn, &cmd, 10000).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 if result.exit_code != 0 {
                     return Ok(json!({ "key": key, "value": null, "exists": false }));
                 }
@@ -57,7 +57,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                     return Err(iii_sdk::IIIError::Handler(format!("Sandbox is not running: {}", sandbox.status)));
                 }
                 let cn = format!("iii-sbx-{id}");
-                for (key, _) in &vars {
+                for key in vars.keys() {
                     if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
                         return Err(iii_sdk::IIIError::Handler(format!("Invalid env key: {key}")));
                     }
@@ -67,7 +67,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                 let encoded = base64::engine::general_purpose::STANDARD.encode(env_lines.as_bytes());
                 let cmd = vec!["sh".into(), "-c".into(), format!("echo '{encoded}' | base64 -d >> /etc/environment")];
                 exec_in_container(&dk, &cn, &cmd, 10000).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
 
                 let keys: Vec<&String> = vars.keys().collect();
                 Ok(json!({ "set": keys, "count": vars.len() }))
@@ -91,7 +91,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                 let cn = format!("iii-sbx-{id}");
                 let cmd = vec!["sh".into(), "-c".into(), "env".into()];
                 let result = exec_in_container(&dk, &cn, &cmd, 10000).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 if result.exit_code != 0 {
                     return Err(iii_sdk::IIIError::Handler(format!("Failed to list env: {}", result.stderr)));
                 }
@@ -130,7 +130,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                 let cn = format!("iii-sbx-{id}");
                 let cmd = vec!["sh".into(), "-c".into(), format!("sed -i '/^{key}=/d' /etc/environment")];
                 exec_in_container(&dk, &cn, &cmd, 10000).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 Ok(json!({ "deleted": key }))
             }
         });

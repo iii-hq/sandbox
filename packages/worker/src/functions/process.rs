@@ -25,7 +25,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                     return Err(iii_sdk::IIIError::Handler(format!("Sandbox is not running: {}", sandbox.status)));
                 }
                 let cn = format!("iii-sbx-{id}");
-                let top = container_top(&dk, &cn).await.map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                let top = container_top(&dk, &cn).await.map_err(iii_sdk::IIIError::Handler)?;
 
                 let titles: Vec<String> = top.get("Titles")
                     .and_then(|v| v.as_array())
@@ -87,7 +87,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                 let cn = format!("iii-sbx-{id}");
                 let cmd = vec!["kill".into(), format!("-{signal}"), pid.to_string()];
                 exec_in_container(&dk, &cn, &cmd, 10000).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 Ok(json!({ "killed": pid, "signal": signal }))
             }
         });
@@ -109,7 +109,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                 let cn = format!("iii-sbx-{id}");
                 let cmd = vec!["sh".into(), "-c".into(), "ps aux --no-headers".into()];
                 let result = exec_in_container(&dk, &cn, &cmd, 10000).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
 
                 let processes: Vec<Value> = result.stdout.lines()
                     .filter(|l| !l.trim().is_empty())

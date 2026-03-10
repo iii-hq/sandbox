@@ -33,7 +33,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                 let exec_id = generate_id("bg");
                 let shell_cmd = format!("({command}) > /tmp/{exec_id}.log 2>&1");
                 let cmd = validate_command(&shell_cmd)
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
 
                 let cn = format!("iii-sbx-{id}");
                 let exec = dk.create_exec(&cn, CreateExecOptions {
@@ -91,7 +91,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                 let log_file = format!("/tmp/{id}.log");
                 let cmd = vec!["sh".into(), "-c".into(), format!("tail -c +{} {} 2>/dev/null || echo \"\"", cursor + 1, log_file)];
                 let result = exec_in_container(&dk, &cn, &cmd, 10000).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 let new_cursor = cursor + result.stdout.len() as u64;
                 Ok(json!({ "output": result.stdout, "cursor": new_cursor }))
             }
@@ -116,7 +116,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                     vec!["pkill".into(), "-SIGINT".into(), "-f".into(), "sh -c".into()]
                 };
                 exec_in_container(&dk, &cn, &cmd, 5000).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 Ok(json!({ "success": true }))
             }
         });

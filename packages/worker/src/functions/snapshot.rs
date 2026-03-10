@@ -84,7 +84,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                 let mut restored_config = sandbox.config.clone();
                 restored_config.image = snapshot.image_id.clone();
                 create_container(&dk, id, &restored_config, sandbox.entrypoint.as_deref()).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
 
                 sandbox.status = "running".to_string();
                 sandbox.image = snapshot.image_id.clone();

@@ -64,12 +64,12 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                 let cn = format!("iii-sbx-{id}");
 
                 copy_to_container(&dk, &cn, &filename, code.as_bytes()).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
 
                 let exec_cmd = get_exec_command(language, &filename);
                 let start = Instant::now();
                 let result = exec_in_container(&dk, &cn, &exec_cmd, cfg.max_command_timeout * 1000).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 let execution_time = start.elapsed().as_millis() as u64;
 
                 let error = if result.exit_code != 0 { Some(result.stderr.clone()) } else { None };
@@ -101,7 +101,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                 let cn = format!("iii-sbx-{id}");
                 let cmd = get_install_command(manager, &packages);
                 let result = exec_in_container(&dk, &cn, &cmd, 120000).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 if result.exit_code != 0 {
                     return Err(iii_sdk::IIIError::Handler(format!("Install failed: {}", result.stderr)));
                 }

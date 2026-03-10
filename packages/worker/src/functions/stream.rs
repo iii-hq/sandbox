@@ -36,7 +36,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
 
                 let cn = format!("iii-sbx-{id}");
                 let logs = container_logs(&dk, &cn, false, tail).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 Ok(json!({ "logs": logs }))
             }
         });
@@ -65,7 +65,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
 
                 let cn = format!("iii-sbx-{id}");
                 let stats = get_container_stats(&dk, &cn, id).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 serde_json::to_value(&stats).map_err(|e| iii_sdk::IIIError::Serde(e.to_string()))
             }
         });
