@@ -217,6 +217,11 @@ mod tests {
             warm_pool_replenish_interval: "*/30 * * * * *".to_string(),
             warm_pool_profiles: vec![],
             rate_limit: crate::ratelimit::RateLimitConfig::default(),
+            isolation_backend: "docker".to_string(),
+            firecracker_kernel: "/opt/firecracker/vmlinux".to_string(),
+            firecracker_rootfs: "/opt/firecracker/rootfs.ext4".to_string(),
+            firecracker_vcpus: 2,
+            firecracker_mem_mib: 512,
         }
     }
 

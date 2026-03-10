@@ -1,4 +1,3 @@
-use bollard::Docker;
 use iii_sdk::III;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -6,6 +5,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::EngineConfig;
+use crate::runtime::SandboxRuntime;
 use crate::state::{scopes, StateKV};
 
 pub const SANDBOX_SCOPED_FUNCTIONS: &[&str] = &[
@@ -104,7 +104,7 @@ fn count_sandboxes_for_worker(sandboxes: &[Value], worker_id: &str) -> usize {
         .count()
 }
 
-pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, config: &EngineConfig) {
     {
         let kv = kv.clone();
         let cfg = config.clone();
@@ -215,14 +215,14 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
 
     {
         let kv = kv.clone();
-        let dk = dk.clone();
+        let rt = rt.clone();
         let cfg = config.clone();
         iii.register_function_with_description(
             "worker::reap",
             "Clean up dead workers and handle orphaned sandboxes",
             move |_input: Value| {
                 let kv = kv.clone();
-                let dk = dk.clone();
+                let rt = rt.clone();
                 let cfg = cfg.clone();
                 async move {
                     let workers: Vec<WorkerInfo> = kv.list(WORKERS_SCOPE).await;
@@ -255,7 +255,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                             };
 
                             let container_name = format!("iii-sbx-{sbx_id}");
-                            let exists = dk.inspect_container(&container_name, None).await.is_ok();
+                            let exists = rt.sandbox_exists(&container_name).await.unwrap_or(false);
 
                             if exists {
                                 let mut updated = sbx.clone();
@@ -395,7 +395,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
     }
 }
 
-pub fn register_scoped(iii: &Arc<III>, _dk: &Arc<Docker>, _kv: &StateKV, config: &EngineConfig) {
+pub fn register_scoped(iii: &Arc<III>, _rt: &Arc<dyn SandboxRuntime>, _kv: &StateKV, config: &EngineConfig) {
     let worker_id = &config.worker_name;
 
     for fn_name in SANDBOX_SCOPED_FUNCTIONS {

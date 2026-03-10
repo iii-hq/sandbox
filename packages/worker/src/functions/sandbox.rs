@@ -1,4 +1,3 @@
-use bollard::Docker;
 use iii_sdk::III;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -6,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::auth::{validate_image_allowed, validate_sandbox_config};
 use crate::config::EngineConfig;
-use crate::docker;
+use crate::runtime::SandboxRuntime;
 use crate::state::{generate_id, scopes, StateKV};
 use crate::types::{Sandbox, SandboxConfig, SandboxTemplate};
 
@@ -14,15 +13,14 @@ fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64
 }
 
-pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
-    // sandbox::create
+pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, config: &EngineConfig) {
     {
         let kv = kv.clone();
-        let dk = dk.clone();
+        let rt = rt.clone();
         let cfg = config.clone();
         iii.register_function_with_description("sandbox::create", "Create a new Docker sandbox container", move |input: Value| {
             let kv = kv.clone();
-            let dk = dk.clone();
+            let rt = rt.clone();
             let cfg = cfg.clone();
             async move {
                 let mut merged = input.clone();
@@ -75,9 +73,9 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                     entrypoint: sandbox_cfg.entrypoint.clone(),
                 };
 
-                docker::ensure_image(&dk, &sandbox_cfg.image).await
+                rt.ensure_image(&sandbox_cfg.image).await
                     .map_err(iii_sdk::IIIError::Handler)?;
-                docker::create_container(&dk, &id, &full_config, sandbox_cfg.entrypoint.as_deref()).await
+                rt.create_sandbox(&id, &full_config, sandbox_cfg.entrypoint.as_deref()).await
                     .map_err(iii_sdk::IIIError::Handler)?;
 
                 let sandbox = Sandbox {
@@ -101,7 +99,6 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
         });
     }
 
-    // sandbox::get
     {
         let kv = kv.clone();
         iii.register_function_with_description("sandbox::get", "Get sandbox details by ID", move |input: Value| {
@@ -116,7 +113,6 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
         });
     }
 
-    // sandbox::list
     {
         let kv = kv.clone();
         iii.register_function_with_description("sandbox::list", "List sandboxes with filtering and pagination", move |input: Value| {
@@ -151,7 +147,6 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
         });
     }
 
-    // sandbox::renew
     {
         let kv = kv.clone();
         iii.register_function_with_description("sandbox::renew", "Extend sandbox TTL", move |input: Value| {
@@ -175,13 +170,12 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
         });
     }
 
-    // sandbox::kill
     {
         let kv = kv.clone();
-        let dk = dk.clone();
+        let rt = rt.clone();
         iii.register_function_with_description("sandbox::kill", "Stop and remove a sandbox container", move |input: Value| {
             let kv = kv.clone();
-            let dk = dk.clone();
+            let rt = rt.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("id is required".into()))?;
@@ -189,11 +183,8 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                     .ok_or_else(|| iii_sdk::IIIError::Handler(format!("Sandbox not found: {id}")))?;
 
                 let container_name = format!("iii-sbx-{id}");
-                let _ = dk.stop_container(&container_name, None).await;
-                let _ = dk.remove_container(
-                    &container_name,
-                    Some(RemoveContainerOptions { force: true, ..Default::default() }),
-                ).await;
+                let _ = rt.stop_sandbox(&container_name).await;
+                let _ = rt.remove_sandbox(&container_name, true).await;
 
                 kv.delete(scopes::SANDBOXES, id).await
                     .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
@@ -203,13 +194,12 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
         });
     }
 
-    // sandbox::pause
     {
         let kv = kv.clone();
-        let dk = dk.clone();
+        let rt = rt.clone();
         iii.register_function_with_description("sandbox::pause", "Pause a running sandbox", move |input: Value| {
             let kv = kv.clone();
-            let dk = dk.clone();
+            let rt = rt.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("id is required".into()))?;
@@ -221,7 +211,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                 }
 
                 let container_name = format!("iii-sbx-{id}");
-                dk.pause_container(&container_name).await
+                rt.pause_sandbox(&container_name).await
                     .map_err(|e| iii_sdk::IIIError::Handler(format!("Failed to pause sandbox: {e}")))?;
 
                 sandbox.status = "paused".to_string();
@@ -233,13 +223,12 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
         });
     }
 
-    // sandbox::resume
     {
         let kv = kv.clone();
-        let dk = dk.clone();
+        let rt = rt.clone();
         iii.register_function_with_description("sandbox::resume", "Resume a paused sandbox", move |input: Value| {
             let kv = kv.clone();
-            let dk = dk.clone();
+            let rt = rt.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("id is required".into()))?;
@@ -251,7 +240,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                 }
 
                 let container_name = format!("iii-sbx-{id}");
-                dk.unpause_container(&container_name).await
+                rt.unpause_sandbox(&container_name).await
                     .map_err(|e| iii_sdk::IIIError::Handler(format!("Failed to resume sandbox: {e}")))?;
 
                 sandbox.status = "running".to_string();
@@ -263,5 +252,3 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
         });
     }
 }
-
-use bollard::container::RemoveContainerOptions;

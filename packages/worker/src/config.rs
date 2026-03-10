@@ -32,6 +32,11 @@ pub struct EngineConfig {
     pub warm_pool_size: usize,
     pub warm_pool_replenish_interval: String,
     pub warm_pool_profiles: Vec<PoolProfile>,
+    pub isolation_backend: String,
+    pub firecracker_kernel: String,
+    pub firecracker_rootfs: String,
+    pub firecracker_vcpus: u32,
+    pub firecracker_mem_mib: u64,
     pub rate_limit: RateLimitConfig,
 }
 
@@ -77,6 +82,14 @@ impl EngineConfig {
             warm_pool_replenish_interval: env::var("III_POOL_REPLENISH")
                 .unwrap_or_else(|_| "*/30 * * * * *".to_string()),
             warm_pool_profiles: vec![],
+            isolation_backend: env::var("III_ISOLATION_BACKEND")
+                .unwrap_or_else(|_| "docker".to_string()),
+            firecracker_kernel: env::var("III_FIRECRACKER_KERNEL")
+                .unwrap_or_else(|_| "/opt/firecracker/vmlinux".to_string()),
+            firecracker_rootfs: env::var("III_FIRECRACKER_ROOTFS")
+                .unwrap_or_else(|_| "/opt/firecracker/rootfs.ext4".to_string()),
+            firecracker_vcpus: parse_int_or_default("III_FIRECRACKER_VCPUS", 2) as u32,
+            firecracker_mem_mib: parse_int_or_default("III_FIRECRACKER_MEM_MIB", 512),
             rate_limit: RateLimitConfig {
                 enabled: env::var("III_RATE_LIMIT_ENABLED")
                     .map(|v| v == "true" || v == "1")
@@ -153,6 +166,11 @@ mod tests {
             "III_RATE_TOKEN_BURST",
             "III_RATE_SBX_EXEC_PM",
             "III_RATE_SBX_FS_PM",
+            "III_ISOLATION_BACKEND",
+            "III_FIRECRACKER_KERNEL",
+            "III_FIRECRACKER_ROOTFS",
+            "III_FIRECRACKER_VCPUS",
+            "III_FIRECRACKER_MEM_MIB",
         ];
         for var in vars {
             unsafe { env::remove_var(var) };
@@ -184,6 +202,11 @@ mod tests {
         assert_eq!(cfg.warm_pool_profiles.len(), 1);
         assert_eq!(cfg.warm_pool_profiles[0].image, "python:3.12-slim");
         assert!(!cfg.warm_pool_profiles[0].network_enabled);
+        assert_eq!(cfg.isolation_backend, "docker");
+        assert_eq!(cfg.firecracker_kernel, "/opt/firecracker/vmlinux");
+        assert_eq!(cfg.firecracker_rootfs, "/opt/firecracker/rootfs.ext4");
+        assert_eq!(cfg.firecracker_vcpus, 2);
+        assert_eq!(cfg.firecracker_mem_mib, 512);
         assert!(!cfg.rate_limit.enabled);
         assert_eq!(cfg.rate_limit.token_requests_per_minute, 600);
         assert_eq!(cfg.rate_limit.token_burst, 100);
@@ -317,6 +340,15 @@ mod tests {
         let cfg = EngineConfig::from_env();
         assert_eq!(cfg.ttl_sweep_interval, "*/10 * * * * *");
         assert_eq!(cfg.metrics_interval, "*/5 * * * * *");
+    }
+
+    #[test]
+    fn custom_isolation_backend() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_all_iii_vars();
+        unsafe { env::set_var("III_ISOLATION_BACKEND", "firecracker") };
+        let cfg = EngineConfig::from_env();
+        assert_eq!(cfg.isolation_backend, "firecracker");
     }
 
     #[test]

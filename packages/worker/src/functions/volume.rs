@@ -1,5 +1,3 @@
-use bollard::volume::CreateVolumeOptions;
-use bollard::Docker;
 use iii_sdk::III;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -7,31 +5,26 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::EngineConfig;
+use crate::runtime::SandboxRuntime;
 use crate::state::{generate_id, scopes, StateKV};
 use crate::types::{Sandbox, SandboxVolume};
 
 fn now_ms() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64 }
 
-pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &EngineConfig) {
-    // volume::create
+pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, _config: &EngineConfig) {
     {
-        let kv = kv.clone(); let dk = dk.clone();
+        let kv = kv.clone(); let rt = rt.clone();
         iii.register_function_with_description("volume::create", "Create a persistent volume", move |input: Value| {
-            let kv = kv.clone(); let dk = dk.clone();
+            let kv = kv.clone(); let rt = rt.clone();
             async move {
                 let name = input.get("name").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("name is required".into()))?;
-                let driver = input.get("driver").and_then(|v| v.as_str()).unwrap_or("local");
+                let _driver = input.get("driver").and_then(|v| v.as_str()).unwrap_or("local");
                 let volume_id = generate_id("vol");
                 let docker_volume_name = format!("iii-vol-{volume_id}");
 
-                let opts = CreateVolumeOptions {
-                    name: docker_volume_name.as_str(),
-                    driver,
-                    driver_opts: HashMap::new(),
-                    labels: HashMap::new(),
-                };
-                dk.create_volume(opts).await
+                let labels = HashMap::new();
+                rt.create_volume(&docker_volume_name, labels).await
                     .map_err(|e| iii_sdk::IIIError::Handler(format!("Create volume failed: {e}")))?;
 
                 let volume = SandboxVolume {
@@ -46,7 +39,6 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
         });
     }
 
-    // volume::list
     {
         let kv = kv.clone();
         iii.register_function_with_description("volume::list", "List persistent volumes", move |_input: Value| {
@@ -58,17 +50,16 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
         });
     }
 
-    // volume::delete
     {
-        let kv = kv.clone(); let dk = dk.clone();
+        let kv = kv.clone(); let rt = rt.clone();
         iii.register_function_with_description("volume::delete", "Delete a persistent volume", move |input: Value| {
-            let kv = kv.clone(); let dk = dk.clone();
+            let kv = kv.clone(); let rt = rt.clone();
             async move {
                 let volume_id = input.get("volumeId").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("volumeId is required".into()))?;
                 let volume: SandboxVolume = kv.get(scopes::VOLUMES, volume_id).await
                     .ok_or_else(|| iii_sdk::IIIError::Handler(format!("Volume not found: {volume_id}")))?;
-                let _ = dk.remove_volume(&volume.docker_volume_name, None).await;
+                let _ = rt.remove_volume(&volume.docker_volume_name).await;
                 kv.delete(scopes::VOLUMES, volume_id).await
                     .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
                 Ok(json!({ "deleted": volume_id }))
@@ -76,7 +67,6 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
         });
     }
 
-    // volume::attach
     {
         let kv = kv.clone();
         iii.register_function_with_description("volume::attach", "Attach volume to sandbox", move |input: Value| {
@@ -103,7 +93,6 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
         });
     }
 
-    // volume::detach
     {
         let kv = kv.clone();
         iii.register_function_with_description("volume::detach", "Detach volume from sandbox", move |input: Value| {

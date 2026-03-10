@@ -1,18 +1,18 @@
-use bollard::Docker;
 use iii_sdk::III;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
 use crate::config::EngineConfig;
+use crate::runtime::SandboxRuntime;
 use crate::state::{scopes, StateKV};
 use crate::types::{PortMapping, Sandbox};
 
-pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, _config: &EngineConfig) {
     // port::expose
     {
-        let kv = kv.clone(); let dk = dk.clone();
+        let kv = kv.clone(); let rt = rt.clone();
         iii.register_function_with_description("port::expose", "Expose a port on sandbox container", move |input: Value| {
-            let kv = kv.clone(); let dk = dk.clone();
+            let kv = kv.clone(); let rt = rt.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("id is required".into()))?;
@@ -45,17 +45,11 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                 let mut state = "mapped".to_string();
 
                 let cn = format!("iii-sbx-{id}");
-                if let Ok(info) = dk.inspect_container(&cn, None).await {
-                    if let Some(ports) = info.network_settings.and_then(|ns| ns.ports) {
-                        let key = format!("{container_port}/{protocol}");
-                        if let Some(Some(bindings)) = ports.get(&key) {
-                            if let Some(first) = bindings.first() {
-                                if let Some(hp) = first.host_port.as_ref().and_then(|p| p.parse().ok()) {
-                                    host_port = hp;
-                                    state = "active".to_string();
-                                }
-                            }
-                        }
+                if let Ok(bindings) = rt.sandbox_port_bindings(&cn).await {
+                    let key = format!("{container_port}/{protocol}");
+                    if let Some(Some(hp)) = bindings.get(&key) {
+                        host_port = *hp;
+                        state = "active".to_string();
                     }
                 }
 
@@ -77,9 +71,9 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
 
     // port::list
     {
-        let kv = kv.clone(); let dk = dk.clone();
+        let kv = kv.clone(); let rt = rt.clone();
         iii.register_function_with_description("port::list", "List exposed ports", move |input: Value| {
-            let kv = kv.clone(); let dk = dk.clone();
+            let kv = kv.clone(); let rt = rt.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("id is required".into()))?;
@@ -91,20 +85,14 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                     .unwrap_or_default();
 
                 let cn = format!("iii-sbx-{id}");
-                if let Ok(info) = dk.inspect_container(&cn, None).await {
-                    if let Some(ports) = info.network_settings.and_then(|ns| ns.ports) {
-                        for mapping in &mut stored {
-                            let key = format!("{}/{}", mapping.container_port, mapping.protocol);
-                            if let Some(Some(bindings)) = ports.get(&key) {
-                                if let Some(first) = bindings.first() {
-                                    if let Some(hp) = first.host_port.as_ref().and_then(|p| p.parse().ok()) {
-                                        mapping.host_port = hp;
-                                        mapping.state = "active".to_string();
-                                    }
-                                }
-                            } else {
-                                mapping.state = "mapped".to_string();
-                            }
+                if let Ok(bindings) = rt.sandbox_port_bindings(&cn).await {
+                    for mapping in &mut stored {
+                        let key = format!("{}/{}", mapping.container_port, mapping.protocol);
+                        if let Some(Some(hp)) = bindings.get(&key) {
+                            mapping.host_port = *hp;
+                            mapping.state = "active".to_string();
+                        } else {
+                            mapping.state = "mapped".to_string();
                         }
                     }
                 }

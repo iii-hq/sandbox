@@ -1,23 +1,21 @@
-use bollard::Docker;
 use iii_sdk::III;
 use serde_json::Value;
 use std::sync::Arc;
 
 use crate::auth::{check_auth, validate_command, validate_path};
 use crate::config::EngineConfig;
-use crate::docker::exec_in_container;
+use crate::runtime::SandboxRuntime;
 use crate::state::{scopes, StateKV};
 use crate::types::Sandbox;
 
-pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
-    // cmd::run
+pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, config: &EngineConfig) {
     {
         let kv = kv.clone();
-        let dk = dk.clone();
+        let rt = rt.clone();
         let cfg = config.clone();
         iii.register_function_with_description("cmd::run", "Execute a command in a sandbox", move |input: Value| {
             let kv = kv.clone();
-            let dk = dk.clone();
+            let rt = rt.clone();
             let cfg = cfg.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
@@ -45,7 +43,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                 let timeout_ms = timeout_s.min(cfg.max_command_timeout) * 1000;
 
                 let container_name = format!("iii-sbx-{id}");
-                let result = exec_in_container(&dk, &container_name, &cmd, timeout_ms).await
+                let result = rt.exec_in_sandbox(&container_name, &cmd, timeout_ms).await
                     .map_err(iii_sdk::IIIError::Handler)?;
 
                 serde_json::to_value(&result).map_err(|e| iii_sdk::IIIError::Serde(e.to_string()))
@@ -53,14 +51,13 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
         });
     }
 
-    // cmd::run-stream (registered as regular function, streaming handled via trigger)
     {
         let kv = kv.clone();
-        let dk = dk.clone();
+        let rt = rt.clone();
         let cfg = config.clone();
         iii.register_function_with_description("cmd::run-stream", "Execute a command with streaming output", move |input: Value| {
             let kv = kv.clone();
-            let dk = dk.clone();
+            let rt = rt.clone();
             let cfg = cfg.clone();
             async move {
                 if let Some(auth_err) = check_auth(&input, &cfg) {
@@ -89,7 +86,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                 let timeout_ms = timeout_s.min(cfg.max_command_timeout) * 1000;
 
                 let container_name = format!("iii-sbx-{id}");
-                let result = exec_in_container(&dk, &container_name, &cmd, timeout_ms).await
+                let result = rt.exec_in_sandbox(&container_name, &cmd, timeout_ms).await
                     .map_err(iii_sdk::IIIError::Handler)?;
 
                 serde_json::to_value(&result).map_err(|e| iii_sdk::IIIError::Serde(e.to_string()))

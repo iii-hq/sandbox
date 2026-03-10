@@ -4,6 +4,7 @@ mod docker;
 mod functions;
 mod lifecycle;
 mod ratelimit;
+mod runtime;
 mod state;
 mod triggers;
 mod types;
@@ -16,6 +17,8 @@ use tracing::info;
 use config::EngineConfig;
 use docker::connect_docker;
 use ratelimit::RateLimiter;
+use runtime::SandboxRuntime;
+use runtime::docker::DockerRuntime;
 use state::StateKV;
 
 #[tokio::main]
@@ -38,7 +41,8 @@ async fn main() {
     info!("Connected to iii-engine");
 
     let dk = connect_docker();
-    info!("Connected to Docker");
+    let rt: Arc<dyn SandboxRuntime> = Arc::new(DockerRuntime::new(dk));
+    info!(backend = %config.isolation_backend, "Isolation backend initialized");
 
     let kv = StateKV::new(iii.clone());
     let limiter = Arc::new(RateLimiter::new(config.rate_limit.clone()));
@@ -64,9 +68,9 @@ async fn main() {
         }
     });
 
-    functions::register_all(&iii, &dk, &kv, &config);
-    lifecycle::register_all(&iii, &dk, &kv, &config);
-    triggers::register_all(&iii, &dk, &kv, &config, &limiter);
+    functions::register_all(&iii, &rt, &kv, &config);
+    lifecycle::register_all(&iii, &rt, &kv, &config);
+    triggers::register_all(&iii, &rt, &kv, &config, &limiter);
 
     info!(
         port = config.rest_port,
@@ -74,13 +78,13 @@ async fn main() {
         "All functions and triggers registered"
     );
 
-    let dk_shutdown = dk.clone();
+    let rt_shutdown = rt.clone();
     let kv_shutdown = kv.clone();
     let iii_shutdown = iii.clone();
 
     signal::ctrl_c().await.expect("Failed to listen for SIGINT");
     info!("Shutting down...");
-    lifecycle::cleanup::cleanup_all(&dk_shutdown, &kv_shutdown).await;
+    lifecycle::cleanup::cleanup_all(&rt_shutdown, &kv_shutdown).await;
     iii_shutdown.shutdown_async().await;
     info!("Shutdown complete");
 }
