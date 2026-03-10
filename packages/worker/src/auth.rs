@@ -165,7 +165,7 @@ pub fn validate_chmod_mode(mode: &str) -> Result<String, String> {
     }
     let is_octal = mode.len() >= 3 && mode.len() <= 4 && mode.chars().all(|c| ('0'..='7').contains(&c));
     let is_symbolic = {
-        let parts: Vec<&str> = mode.split(|c: char| c == '+' || c == '-' || c == '=').collect();
+        let parts: Vec<&str> = mode.split(['+', '-', '=']).collect();
         parts.len() == 2
             && parts[0].chars().all(|c| "ugoa".contains(c))
             && parts[1].chars().all(|c| "rwxXt".contains(c))

@@ -45,7 +45,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                 }
 
                 let validated = validate_sandbox_config(&merged)
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 let sandbox_cfg: SandboxConfig = serde_json::from_value(validated.clone())
                     .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
 
@@ -76,9 +76,9 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                 };
 
                 docker::ensure_image(&dk, &sandbox_cfg.image).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 docker::create_container(&dk, &id, &full_config, sandbox_cfg.entrypoint.as_deref()).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
 
                 let sandbox = Sandbox {
                     id: id.clone(),
@@ -129,7 +129,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                 if let Some(metadata) = input.get("metadata").and_then(|v| v.as_object()) {
                     sandboxes.retain(|s| {
                         metadata.iter().all(|(k, v)| {
-                            s.metadata.get(k).map(|sv| sv.as_str()) == v.as_str().map(|s| s)
+                            s.metadata.get(k).map(|sv| sv.as_str()) == v.as_str()
                         })
                     });
                 }

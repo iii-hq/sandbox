@@ -45,11 +45,11 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                     .ok_or_else(|| iii_sdk::IIIError::Handler("id is required".into()))?;
                 let path = input.get("path").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("path is required".into()))?;
-                validate_path(path, &cfg.workspace_dir).map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                validate_path(path, &cfg.workspace_dir).map_err(iii_sdk::IIIError::Handler)?;
                 let cn = require_running(&kv, id).await?;
                 let cmd = vec!["cat".to_string(), path.to_string()];
                 let result = exec_in_container(&dk, &cn, &cmd, 10000).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 if result.exit_code != 0 {
                     return Err(iii_sdk::IIIError::Handler(format!("Failed to read: {}", result.stderr)));
                 }
@@ -74,10 +74,10 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                     .ok_or_else(|| iii_sdk::IIIError::Handler("path is required".into()))?;
                 let content = input.get("content").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("content is required".into()))?;
-                validate_path(path, &cfg.workspace_dir).map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                validate_path(path, &cfg.workspace_dir).map_err(iii_sdk::IIIError::Handler)?;
                 let cn = require_running(&kv, id).await?;
                 copy_to_container(&dk, &cn, path, content.as_bytes()).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 Ok(json!({ "success": true }))
             }
         });
@@ -97,11 +97,11 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                     .ok_or_else(|| iii_sdk::IIIError::Handler("id is required".into()))?;
                 let path = input.get("path").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("path is required".into()))?;
-                validate_path(path, &cfg.workspace_dir).map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                validate_path(path, &cfg.workspace_dir).map_err(iii_sdk::IIIError::Handler)?;
                 let cn = require_running(&kv, id).await?;
                 let cmd = vec!["rm".to_string(), "-f".to_string(), path.to_string()];
                 let result = exec_in_container(&dk, &cn, &cmd, 10000).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 if result.exit_code != 0 {
                     return Err(iii_sdk::IIIError::Handler(format!("Failed to delete: {}", result.stderr)));
                 }
@@ -123,10 +123,10 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                 let id = input.get("id").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("id is required".into()))?;
                 let dir = input.get("path").and_then(|v| v.as_str()).unwrap_or(&cfg.workspace_dir);
-                validate_path(dir, &cfg.workspace_dir).map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                validate_path(dir, &cfg.workspace_dir).map_err(iii_sdk::IIIError::Handler)?;
                 let cn = require_running(&kv, id).await?;
                 let files = list_container_dir(&dk, &cn, dir).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 serde_json::to_value(&files).map_err(|e| iii_sdk::IIIError::Serde(e.to_string()))
             }
         });
@@ -147,11 +147,11 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                 let pattern = input.get("pattern").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("pattern is required".into()))?;
                 let dir = input.get("dir").and_then(|v| v.as_str()).unwrap_or(&cfg.workspace_dir);
-                validate_path(dir, &cfg.workspace_dir).map_err(|e| iii_sdk::IIIError::Handler(e))?;
-                validate_search_pattern(pattern).map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                validate_path(dir, &cfg.workspace_dir).map_err(iii_sdk::IIIError::Handler)?;
+                validate_search_pattern(pattern).map_err(iii_sdk::IIIError::Handler)?;
                 let cn = require_running(&kv, id).await?;
                 let results = search_in_container(&dk, &cn, dir, pattern).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 Ok(serde_json::to_value(&results).unwrap())
             }
         });
@@ -173,14 +173,14 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                     .ok_or_else(|| iii_sdk::IIIError::Handler("path is required".into()))?;
                 let content = input.get("content").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("content is required".into()))?;
-                validate_path(path, &cfg.workspace_dir).map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                validate_path(path, &cfg.workspace_dir).map_err(iii_sdk::IIIError::Handler)?;
                 let cn = require_running(&kv, id).await?;
                 use base64::Engine;
                 let bytes = base64::engine::general_purpose::STANDARD
                     .decode(content)
                     .map_err(|e| iii_sdk::IIIError::Handler(format!("Invalid base64: {e}")))?;
                 copy_to_container(&dk, &cn, path, &bytes).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 Ok(json!({ "success": true }))
             }
         });
@@ -200,10 +200,10 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                     .ok_or_else(|| iii_sdk::IIIError::Handler("id is required".into()))?;
                 let path = input.get("path").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("path is required".into()))?;
-                validate_path(path, &cfg.workspace_dir).map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                validate_path(path, &cfg.workspace_dir).map_err(iii_sdk::IIIError::Handler)?;
                 let cn = require_running(&kv, id).await?;
                 let bytes = copy_from_container(&dk, &cn, path).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 use base64::Engine;
                 let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
                 Ok(Value::String(encoded))
@@ -227,11 +227,11 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                     .and_then(|v| serde_json::from_value(v.clone()).ok())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("paths is required".into()))?;
                 for p in &paths {
-                    validate_path(p, &cfg.workspace_dir).map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    validate_path(p, &cfg.workspace_dir).map_err(iii_sdk::IIIError::Handler)?;
                 }
                 let cn = require_running(&kv, id).await?;
                 let metadata = get_file_info(&dk, &cn, &paths).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 serde_json::to_value(&metadata).map_err(|e| iii_sdk::IIIError::Serde(e.to_string()))
             }
         });
@@ -258,11 +258,11 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                         .ok_or_else(|| iii_sdk::IIIError::Handler("from is required".into()))?;
                     let to = m.get("to").and_then(|v| v.as_str())
                         .ok_or_else(|| iii_sdk::IIIError::Handler("to is required".into()))?;
-                    validate_path(from, &cfg.workspace_dir).map_err(|e| iii_sdk::IIIError::Handler(e))?;
-                    validate_path(to, &cfg.workspace_dir).map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    validate_path(from, &cfg.workspace_dir).map_err(iii_sdk::IIIError::Handler)?;
+                    validate_path(to, &cfg.workspace_dir).map_err(iii_sdk::IIIError::Handler)?;
                     let cmd = vec!["mv".to_string(), from.to_string(), to.to_string()];
                     let result = exec_in_container(&dk, &cn, &cmd, 10000).await
-                        .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                        .map_err(iii_sdk::IIIError::Handler)?;
                     if result.exit_code != 0 {
                         return Err(iii_sdk::IIIError::Handler(format!("Move failed: {}", result.stderr)));
                     }
@@ -289,10 +289,10 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                     .ok_or_else(|| iii_sdk::IIIError::Handler("paths is required".into()))?;
                 let cn = require_running(&kv, id).await?;
                 for p in &paths {
-                    validate_path(p, &cfg.workspace_dir).map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    validate_path(p, &cfg.workspace_dir).map_err(iii_sdk::IIIError::Handler)?;
                     let cmd = vec!["mkdir".to_string(), "-p".to_string(), p.to_string()];
                     let result = exec_in_container(&dk, &cn, &cmd, 10000).await
-                        .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                        .map_err(iii_sdk::IIIError::Handler)?;
                     if result.exit_code != 0 {
                         return Err(iii_sdk::IIIError::Handler(format!("Mkdir failed: {}", result.stderr)));
                     }
@@ -319,10 +319,10 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                     .ok_or_else(|| iii_sdk::IIIError::Handler("paths is required".into()))?;
                 let cn = require_running(&kv, id).await?;
                 for p in &paths {
-                    validate_path(p, &cfg.workspace_dir).map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    validate_path(p, &cfg.workspace_dir).map_err(iii_sdk::IIIError::Handler)?;
                     let cmd = vec!["rm".to_string(), "-rf".to_string(), p.to_string()];
                     let result = exec_in_container(&dk, &cn, &cmd, 10000).await
-                        .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                        .map_err(iii_sdk::IIIError::Handler)?;
                     if result.exit_code != 0 {
                         return Err(iii_sdk::IIIError::Handler(format!("Rmdir failed: {}", result.stderr)));
                     }
@@ -348,12 +348,12 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                     .ok_or_else(|| iii_sdk::IIIError::Handler("path is required".into()))?;
                 let mode = input.get("mode").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("mode is required".into()))?;
-                validate_path(path, &cfg.workspace_dir).map_err(|e| iii_sdk::IIIError::Handler(e))?;
-                validate_chmod_mode(mode).map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                validate_path(path, &cfg.workspace_dir).map_err(iii_sdk::IIIError::Handler)?;
+                validate_chmod_mode(mode).map_err(iii_sdk::IIIError::Handler)?;
                 let cn = require_running(&kv, id).await?;
                 let cmd = vec!["chmod".to_string(), mode.to_string(), path.to_string()];
                 let result = exec_in_container(&dk, &cn, &cmd, 10000).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 if result.exit_code != 0 {
                     return Err(iii_sdk::IIIError::Handler(format!("Chmod failed: {}", result.stderr)));
                 }

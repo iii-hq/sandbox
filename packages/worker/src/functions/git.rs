@@ -19,7 +19,7 @@ async fn git_exec(dk: &Docker, kv: &StateKV, id: &str, git_cmd: &str, path: Opti
     let cmd = vec!["sh".to_string(), "-c".to_string(), full_cmd];
     let cn = format!("iii-sbx-{id}");
     let result = exec_in_container(dk, &cn, &cmd, 30000).await
-        .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+        .map_err(iii_sdk::IIIError::Handler)?;
     serde_json::to_value(&result).map_err(|e| iii_sdk::IIIError::Serde(e.to_string()))
 }
 
@@ -56,7 +56,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                 let cn = format!("iii-sbx-{id}");
                 let shell = vec!["sh".to_string(), "-c".to_string(), cmd];
                 let result = exec_in_container(&dk, &cn, &shell, 30000).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 serde_json::to_value(&result).map_err(|e| iii_sdk::IIIError::Serde(e.to_string()))
             }
         });

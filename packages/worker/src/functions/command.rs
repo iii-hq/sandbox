@@ -34,19 +34,19 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                 let mut full_cmd = command.to_string();
                 if let Some(cwd) = input.get("cwd").and_then(|v| v.as_str()) {
                     validate_path(cwd, &cfg.workspace_dir)
-                        .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                        .map_err(iii_sdk::IIIError::Handler)?;
                     full_cmd = format!("cd \"{cwd}\" && {full_cmd}");
                 }
 
                 let cmd = validate_command(&full_cmd)
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
 
                 let timeout_s = input.get("timeout").and_then(|v| v.as_u64()).unwrap_or(cfg.max_command_timeout);
                 let timeout_ms = timeout_s.min(cfg.max_command_timeout) * 1000;
 
                 let container_name = format!("iii-sbx-{id}");
                 let result = exec_in_container(&dk, &container_name, &cmd, timeout_ms).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
 
                 serde_json::to_value(&result).map_err(|e| iii_sdk::IIIError::Serde(e.to_string()))
             }
@@ -83,14 +83,14 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                 }
 
                 let cmd = validate_command(command)
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
 
                 let timeout_s = body.get("timeout").and_then(|v| v.as_u64()).unwrap_or(cfg.max_command_timeout);
                 let timeout_ms = timeout_s.min(cfg.max_command_timeout) * 1000;
 
                 let container_name = format!("iii-sbx-{id}");
                 let result = exec_in_container(&dk, &container_name, &cmd, timeout_ms).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
 
                 serde_json::to_value(&result).map_err(|e| iii_sdk::IIIError::Serde(e.to_string()))
             }

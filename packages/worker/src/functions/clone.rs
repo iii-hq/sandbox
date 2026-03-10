@@ -41,7 +41,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
             let mut cloned_config = source.config.clone();
             cloned_config.image = image_id.clone();
             create_container(&dk, &new_id, &cloned_config, source.entrypoint.as_deref()).await
-                .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                .map_err(iii_sdk::IIIError::Handler)?;
 
             let now = now_ms();
             let timeout = source.config.timeout.unwrap_or(cfg.default_timeout);

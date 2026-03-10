@@ -36,7 +36,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV) {
                     .ok_or_else(|| iii_sdk::IIIError::Handler(format!("Sandbox not found: {id}")))?;
                 let cn = format!("iii-sbx-{id}");
                 let stats = get_container_stats(&dk, &cn, id).await
-                    .map_err(|e| iii_sdk::IIIError::Handler(e))?;
+                    .map_err(iii_sdk::IIIError::Handler)?;
                 serde_json::to_value(&stats).map_err(|e| iii_sdk::IIIError::Serde(e.to_string()))
             }
         });
