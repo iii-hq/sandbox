@@ -106,21 +106,21 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
 
                     let container_name = format!("iii-sbx-{id}");
 
-                    let direct = try_direct_proxy(
-                        &dk, &client, &container_name, port, path,
-                        http_method, &req_headers, &body, timeout_ms,
-                    )
-                    .await;
+                    let ctx = ProxyContext {
+                        dk: &dk,
+                        client: &client,
+                        container_name: &container_name,
+                        port,
+                        path,
+                        method: http_method,
+                        headers: &req_headers,
+                        body: &body,
+                        timeout_ms,
+                    };
 
-                    match direct {
+                    match try_direct_proxy(&ctx).await {
                         Ok(result) => Ok(result),
-                        Err(_) => {
-                            proxy_via_exec(
-                                &dk, &container_name, &method, port, path,
-                                &req_headers, &body, timeout_ms,
-                            )
-                            .await
-                        }
+                        Err(_) => proxy_via_exec(&ctx).await,
                     }
                 }
             },
@@ -201,29 +201,32 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
     }
 }
 
-async fn try_direct_proxy(
-    dk: &Docker,
-    client: &reqwest::Client,
-    container_name: &str,
+struct ProxyContext<'a> {
+    dk: &'a Docker,
+    client: &'a reqwest::Client,
+    container_name: &'a str,
     port: u16,
-    path: &str,
+    path: &'a str,
     method: reqwest::Method,
-    headers: &Value,
-    body: &str,
+    headers: &'a Value,
+    body: &'a str,
     timeout_ms: u64,
-) -> Result<Value, iii_sdk::IIIError> {
-    let container_ip = get_container_ip(dk, container_name).await?;
-    let url = format!("http://{container_ip}:{port}{path}");
+}
 
-    let send_body = !body.is_empty()
-        && method != reqwest::Method::GET
-        && method != reqwest::Method::HEAD;
+async fn try_direct_proxy(ctx: &ProxyContext<'_>) -> Result<Value, iii_sdk::IIIError> {
+    let container_ip = get_container_ip(ctx.dk, ctx.container_name).await?;
+    let url = format!("http://{container_ip}:{}{}", ctx.port, ctx.path);
 
-    let mut req = client
-        .request(method, &url)
-        .timeout(std::time::Duration::from_millis(timeout_ms));
+    let send_body = !ctx.body.is_empty()
+        && ctx.method != reqwest::Method::GET
+        && ctx.method != reqwest::Method::HEAD;
 
-    if let Some(obj) = headers.as_object() {
+    let mut req = ctx
+        .client
+        .request(ctx.method.clone(), &url)
+        .timeout(std::time::Duration::from_millis(ctx.timeout_ms));
+
+    if let Some(obj) = ctx.headers.as_object() {
         for (k, v) in obj {
             if let Some(val) = v.as_str() {
                 req = req.header(k, val);
@@ -232,7 +235,7 @@ async fn try_direct_proxy(
     }
 
     if send_body {
-        req = req.body(body.to_string());
+        req = req.body(ctx.body.to_string());
     }
 
     let resp = req.send().await.map_err(|e| {
@@ -261,51 +264,62 @@ async fn try_direct_proxy(
     }))
 }
 
-async fn proxy_via_exec(
-    dk: &Docker,
-    container_name: &str,
-    method: &str,
-    port: u16,
-    path: &str,
-    headers: &Value,
-    body: &str,
-    timeout_ms: u64,
-) -> Result<Value, iii_sdk::IIIError> {
-    let mut curl_cmd = format!(
-        "curl -s -D /dev/stderr -w '\\n__PROXY_STATUS__%{{http_code}}' -X {method}"
-    );
+async fn proxy_via_exec(ctx: &ProxyContext<'_>) -> Result<Value, iii_sdk::IIIError> {
+    let max_time_secs = (ctx.timeout_ms / 1000).max(1);
+    let connect_timeout_secs = (max_time_secs / 6).max(1).min(10);
 
-    if let Some(obj) = headers.as_object() {
+    let mut argv = vec![
+        "curl".to_string(),
+        "-s".to_string(),
+        "--globoff".to_string(),
+        "--connect-timeout".to_string(),
+        connect_timeout_secs.to_string(),
+        "--max-time".to_string(),
+        max_time_secs.to_string(),
+        "-D".to_string(),
+        "/dev/stderr".to_string(),
+        "-w".to_string(),
+        "\n__PROXY_STATUS__%{http_code}".to_string(),
+        "-X".to_string(),
+        ctx.method.as_str().to_string(),
+    ];
+
+    if let Some(obj) = ctx.headers.as_object() {
         for (k, v) in obj {
             if let Some(val) = v.as_str() {
-                let ek = k.replace('\'', "'\\''");
-                let ev = val.replace('\'', "'\\''");
-                curl_cmd.push_str(&format!(" -H '{ek}: {ev}'"));
+                argv.push("-H".to_string());
+                argv.push(format!("{k}: {val}"));
             }
         }
     }
 
-    if !body.is_empty() && method != "GET" && method != "HEAD" {
-        let eb = body.replace('\'', "'\\''");
-        curl_cmd.push_str(&format!(" -d '{eb}'"));
+    if !ctx.body.is_empty()
+        && ctx.method != reqwest::Method::GET
+        && ctx.method != reqwest::Method::HEAD
+    {
+        argv.push("--data-raw".to_string());
+        argv.push(ctx.body.to_string());
     }
 
-    let escaped_path = path.replace('\'', "'\\''");
-    curl_cmd.push_str(&format!(" 'http://localhost:{port}{escaped_path}'"));
+    argv.push(format!("http://localhost:{}{}", ctx.port, ctx.path));
 
-    let cmd = vec!["sh".to_string(), "-c".to_string(), curl_cmd];
-
-    let result = exec_in_container(dk, container_name, &cmd, timeout_ms)
+    let result = exec_in_container(ctx.dk, ctx.container_name, &argv, ctx.timeout_ms)
         .await
         .map_err(|e| iii_sdk::IIIError::Handler(format!("Exec proxy failed: {e}")))?;
 
-    if result.exit_code != 0 && !result.stdout.contains("__PROXY_STATUS__") {
+    if result.exit_code != 0 {
         let msg = if result.stderr.contains("not found") {
             "curl not available in container — install curl or run worker in Docker".to_string()
         } else {
             format!("curl failed (exit {}): {}", result.exit_code, result.stderr)
         };
         return Err(iii_sdk::IIIError::Handler(msg));
+    }
+
+    if !result.stdout.contains("__PROXY_STATUS__") {
+        return Err(iii_sdk::IIIError::Handler(
+            "Unexpected curl output: missing status marker".to_string(),
+        ));
     }
 
     let (resp_body, status_code) = parse_curl_output(&result.stdout);
@@ -315,7 +329,7 @@ async fn proxy_via_exec(
         "statusCode": status_code,
         "headers": resp_headers,
         "body": resp_body,
-        "url": format!("http://localhost:{port}{path}"),
+        "url": format!("http://localhost:{}{}", ctx.port, ctx.path),
         "proxiedVia": "exec",
     }))
 }
@@ -613,41 +627,134 @@ mod tests {
     }
 
     #[test]
-    fn shell_escape_single_quotes() {
-        let body = "it's a test";
-        let escaped = body.replace('\'', "'\\''");
-        assert_eq!(escaped, "it'\\''s a test");
+    fn argv_contains_globoff() {
+        let argv = build_test_argv("GET", 3000, "/health", &json!({}), "", 30_000);
+        assert!(argv.contains(&"--globoff".to_string()));
     }
 
     #[test]
-    fn shell_escape_no_special() {
-        let body = "normal body";
-        let escaped = body.replace('\'', "'\\''");
-        assert_eq!(escaped, "normal body");
+    fn argv_contains_timeout_flags() {
+        let argv = build_test_argv("GET", 3000, "/health", &json!({}), "", 30_000);
+        assert!(argv.contains(&"--connect-timeout".to_string()));
+        assert!(argv.contains(&"--max-time".to_string()));
+        let ct_idx = argv.iter().position(|a| a == "--connect-timeout").unwrap();
+        assert_eq!(argv[ct_idx + 1], "5");
+        let mt_idx = argv.iter().position(|a| a == "--max-time").unwrap();
+        assert_eq!(argv[mt_idx + 1], "30");
     }
 
     #[test]
-    fn curl_cmd_format_get() {
-        let method = "GET";
-        let port = 3000u16;
-        let path = "/health";
-        let cmd = format!(
-            "curl -s -D /dev/stderr -w '\\n__PROXY_STATUS__%{{http_code}}' -X {method} 'http://localhost:{port}{path}'"
-        );
-        assert!(cmd.contains("-X GET"));
-        assert!(cmd.contains("localhost:3000/health"));
-        assert!(cmd.contains("__PROXY_STATUS__"));
+    fn argv_timeout_short_request() {
+        let argv = build_test_argv("GET", 3000, "/", &json!({}), "", 5_000);
+        let mt_idx = argv.iter().position(|a| a == "--max-time").unwrap();
+        assert_eq!(argv[mt_idx + 1], "5");
+        let ct_idx = argv.iter().position(|a| a == "--connect-timeout").unwrap();
+        assert_eq!(argv[ct_idx + 1], "1");
     }
 
     #[test]
-    fn curl_cmd_format_post_with_body() {
-        let method = "POST";
-        let body = "{\"key\":\"val\"}";
-        let eb = body.replace('\'', "'\\''");
-        let cmd = format!(
-            "curl -s -D /dev/stderr -w '\\n__PROXY_STATUS__%{{http_code}}' -X {method} -d '{eb}' 'http://localhost:3000/api'"
-        );
-        assert!(cmd.contains("-X POST"));
-        assert!(cmd.contains("-d '{\"key\":\"val\"}'"));
+    fn argv_uses_data_raw_not_d() {
+        let argv = build_test_argv("POST", 3000, "/api", &json!({}), "{\"k\":\"v\"}", 30_000);
+        assert!(argv.contains(&"--data-raw".to_string()));
+        assert!(!argv.contains(&"-d".to_string()));
+    }
+
+    #[test]
+    fn argv_no_body_on_get() {
+        let argv = build_test_argv("GET", 3000, "/", &json!({}), "should_not_appear", 30_000);
+        assert!(!argv.contains(&"--data-raw".to_string()));
+    }
+
+    #[test]
+    fn argv_method_in_args() {
+        let argv = build_test_argv("DELETE", 8080, "/resource", &json!({}), "", 30_000);
+        let x_idx = argv.iter().position(|a| a == "-X").unwrap();
+        assert_eq!(argv[x_idx + 1], "DELETE");
+    }
+
+    #[test]
+    fn argv_url_last() {
+        let argv = build_test_argv("GET", 3000, "/api/data", &json!({}), "", 30_000);
+        assert_eq!(argv.last().unwrap(), "http://localhost:3000/api/data");
+    }
+
+    #[test]
+    fn argv_headers_as_separate_args() {
+        let headers = json!({"content-type": "application/json", "x-custom": "val"});
+        let argv = build_test_argv("POST", 3000, "/", &headers, "{}", 30_000);
+        let h_positions: Vec<usize> = argv
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| *a == "-H")
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(h_positions.len(), 2);
+        for pos in h_positions {
+            let header_val = &argv[pos + 1];
+            assert!(header_val.contains(": "));
+        }
+    }
+
+    #[test]
+    fn argv_body_with_at_sign_safe() {
+        let argv = build_test_argv("POST", 3000, "/", &json!({}), "@/etc/passwd", 30_000);
+        assert!(argv.contains(&"--data-raw".to_string()));
+        assert!(argv.contains(&"@/etc/passwd".to_string()));
+    }
+
+    #[test]
+    fn argv_no_sh_c() {
+        let argv = build_test_argv("GET", 3000, "/", &json!({}), "", 30_000);
+        assert!(!argv.contains(&"sh".to_string()));
+        assert!(!argv.contains(&"-c".to_string()));
+    }
+
+    fn build_test_argv(
+        method: &str,
+        port: u16,
+        path: &str,
+        headers: &Value,
+        body: &str,
+        timeout_ms: u64,
+    ) -> Vec<String> {
+        let max_time_secs = (timeout_ms / 1000).max(1);
+        let connect_timeout_secs = (max_time_secs / 6).max(1).min(10);
+        let http_method: reqwest::Method = method.parse().unwrap();
+
+        let mut argv = vec![
+            "curl".to_string(),
+            "-s".to_string(),
+            "--globoff".to_string(),
+            "--connect-timeout".to_string(),
+            connect_timeout_secs.to_string(),
+            "--max-time".to_string(),
+            max_time_secs.to_string(),
+            "-D".to_string(),
+            "/dev/stderr".to_string(),
+            "-w".to_string(),
+            "\n__PROXY_STATUS__%{http_code}".to_string(),
+            "-X".to_string(),
+            http_method.as_str().to_string(),
+        ];
+
+        if let Some(obj) = headers.as_object() {
+            for (k, v) in obj {
+                if let Some(val) = v.as_str() {
+                    argv.push("-H".to_string());
+                    argv.push(format!("{k}: {val}"));
+                }
+            }
+        }
+
+        if !body.is_empty()
+            && http_method != reqwest::Method::GET
+            && http_method != reqwest::Method::HEAD
+        {
+            argv.push("--data-raw".to_string());
+            argv.push(body.to_string());
+        }
+
+        argv.push(format!("http://localhost:{port}{path}"));
+        argv
     }
 }
