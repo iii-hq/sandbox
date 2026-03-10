@@ -21,36 +21,39 @@ pub mod interpreter;
 pub mod warmpool;
 pub mod terminal;
 pub mod proxy;
+pub mod worker;
 
-use bollard::Docker;
 use iii_sdk::III;
 use std::sync::Arc;
 
 use crate::config::EngineConfig;
+use crate::runtime::SandboxRuntime;
 use crate::state::StateKV;
 
-pub fn register_all(iii: &Arc<III>, docker: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
-    sandbox::register(iii, docker, kv, config);
-    command::register(iii, docker, kv, config);
-    filesystem::register(iii, docker, kv, config);
-    git::register(iii, docker, kv, config);
-    env::register(iii, docker, kv, config);
-    process::register(iii, docker, kv, config);
-    port::register(iii, docker, kv, config);
-    snapshot::register(iii, docker, kv, config);
-    clone::register(iii, docker, kv, config);
+pub fn register_all(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, config: &EngineConfig) {
+    sandbox::register(iii, rt, kv, config);
+    command::register(iii, rt, kv, config);
+    filesystem::register(iii, rt, kv, config);
+    git::register(iii, rt, kv, config);
+    env::register(iii, rt, kv, config);
+    process::register(iii, rt, kv, config);
+    port::register(iii, rt, kv, config);
+    snapshot::register(iii, rt, kv, config);
+    clone::register(iii, rt, kv, config);
     template::register(iii, kv, config);
-    metrics::register(iii, docker, kv);
-    monitor::register(iii, docker, kv, config);
+    metrics::register(iii, rt, kv);
+    monitor::register(iii, rt, kv, config);
     event::register(iii, kv, config);
     queue::register(iii, kv, config);
-    background::register(iii, docker, kv, config);
-    network::register(iii, docker, kv, config);
-    volume::register(iii, docker, kv, config);
+    background::register(iii, rt, kv, config);
+    network::register(iii, rt, kv, config);
+    volume::register(iii, rt, kv, config);
     observability::register(iii, kv, config);
-    stream::register(iii, docker, kv, config);
-    interpreter::register(iii, docker, kv, config);
-    warmpool::register(iii, docker, kv, config);
-    terminal::register(iii, docker, kv, config);
-    proxy::register(iii, docker, kv, config);
+    stream::register(iii, rt, kv, config);
+    interpreter::register(iii, rt, kv, config);
+    warmpool::register(iii, rt, kv, config);
+    terminal::register(iii, rt, kv, config);
+    proxy::register(iii, rt, kv, config);
+    worker::register(iii, rt, kv, config);
+    worker::register_scoped(iii, rt, kv, config);
 }

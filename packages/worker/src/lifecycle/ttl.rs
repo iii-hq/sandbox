@@ -1,10 +1,9 @@
-use bollard::container::RemoveContainerOptions;
-use bollard::Docker;
 use iii_sdk::III;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::runtime::SandboxRuntime;
 use crate::state::{scopes, StateKV};
 use crate::types::Sandbox;
 
@@ -15,13 +14,13 @@ fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
-pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV) {
+pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV) {
     {
         let kv = kv.clone();
-        let dk = dk.clone();
+        let rt = rt.clone();
         iii.register_function_with_description("lifecycle::ttl-sweep", "Sweep expired sandboxes", move |_input: Value| {
             let kv = kv.clone();
-            let dk = dk.clone();
+            let rt = rt.clone();
             async move {
                 let sandboxes: Vec<Sandbox> = kv.list(scopes::SANDBOXES).await;
                 let now = now_ms();
@@ -30,18 +29,16 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV) {
                 for sandbox in &sandboxes {
                     if sandbox.expires_at <= now {
                         let cn = format!("iii-sbx-{}", sandbox.id);
-                        let _ = dk.stop_container(&cn, None).await;
-                        let _ = dk
-                            .remove_container(
-                                &cn,
-                                Some(RemoveContainerOptions {
-                                    force: true,
-                                    ..Default::default()
-                                }),
-                            )
-                            .await;
-                        let _ = kv.delete(scopes::SANDBOXES, &sandbox.id).await;
-                        swept += 1;
+                        let _ = rt.stop_sandbox(&cn).await;
+                        match rt.remove_sandbox(&cn, true).await {
+                            Ok(_) => {
+                                let _ = kv.delete(scopes::SANDBOXES, &sandbox.id).await;
+                                swept += 1;
+                            }
+                            Err(e) => {
+                                tracing::warn!(id = %sandbox.id, error = %e, "TTL remove failed, keeping KV record");
+                            }
+                        }
                     }
                 }
 

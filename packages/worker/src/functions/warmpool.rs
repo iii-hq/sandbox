@@ -1,25 +1,23 @@
-use bollard::Docker;
 use iii_sdk::III;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::config::EngineConfig;
-use crate::docker;
+use crate::runtime::SandboxRuntime;
 use crate::state::{scopes, StateKV};
 use crate::types::SandboxConfig;
 
-pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, config: &EngineConfig) {
     let acquire_lock = Arc::new(Mutex::new(()));
 
-    // warmpool::acquire — try to pop a pre-warmed container matching the profile
     {
         let kv = kv.clone();
-        let dk = dk.clone();
+        let rt = rt.clone();
         let lock = acquire_lock.clone();
         iii.register_function_with_description("warmpool::acquire", "Acquire a pre-warmed container from the pool", move |input: Value| {
             let kv = kv.clone();
-            let dk = dk.clone();
+            let rt = rt.clone();
             let lock = lock.clone();
             async move {
                 let profile_key = build_profile_key(&input);
@@ -39,8 +37,8 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
 
                         drop(_guard);
 
-                        let inspect = dk.inspect_container(&container_id, None).await;
-                        if inspect.is_err() {
+                        let exists = rt.sandbox_exists(&container_id).await.unwrap_or(false);
+                        if !exists {
                             return Err(iii_sdk::IIIError::Handler("Pool container no longer exists".into()));
                         }
 
@@ -52,14 +50,13 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
         });
     }
 
-    // warmpool::replenish — fill pool back to target size per profile
     {
         let kv = kv.clone();
-        let dk = dk.clone();
+        let rt = rt.clone();
         let cfg = config.clone();
         iii.register_function_with_description("warmpool::replenish", "Replenish warm container pool to target sizes", move |_input: Value| {
             let kv = kv.clone();
-            let dk = dk.clone();
+            let rt = rt.clone();
             let cfg = cfg.clone();
             async move {
                 let pool_size = cfg.warm_pool_size;
@@ -80,7 +77,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                         let pool_id = crate::state::generate_id("pool");
                         let container_name = format!("iii-pool-{pool_id}");
 
-                        let create_result = docker::create_pool_container(&dk, &container_name, profile).await;
+                        let create_result = rt.create_pool_sandbox(&container_name, profile).await;
                         match create_result {
                             Ok(()) => {
                                 let entry = PoolEntry {
@@ -91,10 +88,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                                 };
                                 if let Err(e) = kv.set(scopes::POOL, &pool_id, &entry).await {
                                     tracing::warn!(error = %e, container = %container_name, "KV write failed, removing orphan container");
-                                    let _ = dk.remove_container(
-                                        &container_name,
-                                        Some(bollard::container::RemoveContainerOptions { force: true, ..Default::default() }),
-                                    ).await;
+                                    let _ = rt.remove_sandbox(&container_name, true).await;
                                 } else {
                                     created += 1;
                                 }
@@ -111,7 +105,6 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
         });
     }
 
-    // warmpool::status — report pool status
     {
         let kv = kv.clone();
         iii.register_function_with_description("warmpool::status", "Get warm pool status", move |_input: Value| {
@@ -136,23 +129,19 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
         });
     }
 
-    // warmpool::drain — remove all pool containers (used during shutdown)
     {
         let kv = kv.clone();
-        let dk = dk.clone();
+        let rt = rt.clone();
         iii.register_function_with_description("warmpool::drain", "Drain and remove all warm pool containers", move |_input: Value| {
             let kv = kv.clone();
-            let dk = dk.clone();
+            let rt = rt.clone();
             async move {
                 let pool: Vec<PoolEntry> = kv.list(scopes::POOL).await;
                 let mut removed = 0u32;
 
                 for entry in &pool {
-                    let _ = dk.stop_container(&entry.container_name, None).await;
-                    let _ = dk.remove_container(
-                        &entry.container_name,
-                        Some(bollard::container::RemoveContainerOptions { force: true, ..Default::default() }),
-                    ).await;
+                    let _ = rt.stop_sandbox(&entry.container_name).await;
+                    let _ = rt.remove_sandbox(&entry.container_name, true).await;
                     let _ = kv.delete(scopes::POOL, &entry.id).await;
                     removed += 1;
                 }

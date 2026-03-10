@@ -1,11 +1,10 @@
-use bollard::Docker;
 use iii_sdk::III;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::EngineConfig;
-use crate::docker::get_container_stats;
+use crate::runtime::SandboxRuntime;
 use crate::state::{generate_id, scopes, StateKV};
 use crate::types::{AlertEvent, ResourceAlert, Sandbox};
 
@@ -14,7 +13,7 @@ fn now_ms() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_mi
 const VALID_METRICS: &[&str] = &["cpu", "memory", "pids"];
 const VALID_ACTIONS: &[&str] = &["notify", "pause", "kill"];
 
-pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, _config: &EngineConfig) {
     // monitor::set-alert
     {
         let kv = kv.clone();
@@ -113,10 +112,10 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
 
     // monitor::check
     {
-        let kv = kv.clone(); let dk = dk.clone();
+        let kv = kv.clone(); let rt = rt.clone();
         let iii2 = iii.clone();
         iii.register_function_with_description("monitor::check", "Check all alerts against current metrics", move |_input: Value| {
-            let kv = kv.clone(); let dk = dk.clone(); let iii2 = iii2.clone();
+            let kv = kv.clone(); let rt = rt.clone(); let iii2 = iii2.clone();
             async move {
                 let mut alerts: Vec<ResourceAlert> = kv.list(scopes::ALERTS).await;
                 let mut checked = 0u64;
@@ -131,7 +130,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
 
                     checked += 1;
                     let cn = format!("iii-sbx-{}", alert.sandbox_id);
-                    let stats = match get_container_stats(&dk, &cn, &sandbox.id).await {
+                    let stats = match rt.sandbox_stats(&cn, &sandbox.id).await {
                         Ok(s) => s,
                         Err(_) => continue,
                     };

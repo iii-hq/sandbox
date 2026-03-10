@@ -1,11 +1,10 @@
-use bollard::Docker;
 use iii_sdk::III;
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use crate::docker::get_container_stats;
+use crate::runtime::SandboxRuntime;
 use crate::state::{scopes, StateKV};
 use crate::types::Sandbox;
 
@@ -21,21 +20,20 @@ pub fn increment_killed() { TOTAL_KILLED.fetch_add(1, Ordering::Relaxed); }
 #[allow(dead_code)]
 pub fn increment_expired() { TOTAL_EXPIRED.fetch_add(1, Ordering::Relaxed); }
 
-pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV) {
+pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV) {
     START_TIME.get_or_init(Instant::now);
 
-    // metrics::sandbox
     {
-        let kv = kv.clone(); let dk = dk.clone();
+        let kv = kv.clone(); let rt = rt.clone();
         iii.register_function_with_description("metrics::sandbox", "Get sandbox resource metrics", move |input: Value| {
-            let kv = kv.clone(); let dk = dk.clone();
+            let kv = kv.clone(); let rt = rt.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("id is required".into()))?;
                 let _sandbox: Sandbox = kv.get(scopes::SANDBOXES, id).await
                     .ok_or_else(|| iii_sdk::IIIError::Handler(format!("Sandbox not found: {id}")))?;
                 let cn = format!("iii-sbx-{id}");
-                let stats = get_container_stats(&dk, &cn, id).await
+                let stats = rt.sandbox_stats(&cn, id).await
                     .map_err(iii_sdk::IIIError::Handler)?;
                 serde_json::to_value(&stats).map_err(|e| iii_sdk::IIIError::Serde(e.to_string()))
             }

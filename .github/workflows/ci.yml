@@ -23,6 +23,25 @@ jobs:
       - run: cargo test
       - run: cargo clippy -- -D warnings
 
+  # Disabled: requires running iii-engine + Docker. Enable once CI infra supports it.
+  integration-test:
+    runs-on: ubuntu-latest
+    if: false
+    needs: [rust-check]
+    defaults:
+      run:
+        working-directory: packages/worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/worker
+      - run: cargo test --tests -- --ignored
+        env:
+          TEST_BASE_URL: http://localhost:3111
+          TEST_AUTH_TOKEN: test-token
+
   ts-check:
     runs-on: ubuntu-latest
     steps:

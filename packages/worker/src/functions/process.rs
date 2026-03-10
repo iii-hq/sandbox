@@ -1,21 +1,20 @@
-use bollard::Docker;
 use iii_sdk::III;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
 use crate::config::EngineConfig;
-use crate::docker::{container_top, exec_in_container};
+use crate::runtime::SandboxRuntime;
 use crate::state::{scopes, StateKV};
 use crate::types::Sandbox;
 
 const VALID_SIGNALS: &[&str] = &["TERM", "KILL", "INT", "HUP", "USR1", "USR2", "STOP", "CONT"];
 
-pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, _config: &EngineConfig) {
     // proc::list
     {
-        let kv = kv.clone(); let dk = dk.clone();
+        let kv = kv.clone(); let rt = rt.clone();
         iii.register_function_with_description("proc::list", "List running processes in sandbox", move |input: Value| {
-            let kv = kv.clone(); let dk = dk.clone();
+            let kv = kv.clone(); let rt = rt.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("id is required".into()))?;
@@ -25,7 +24,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                     return Err(iii_sdk::IIIError::Handler(format!("Sandbox is not running: {}", sandbox.status)));
                 }
                 let cn = format!("iii-sbx-{id}");
-                let top = container_top(&dk, &cn).await.map_err(iii_sdk::IIIError::Handler)?;
+                let top = rt.sandbox_top(&cn).await.map_err(iii_sdk::IIIError::Handler)?;
 
                 let titles: Vec<String> = top.get("Titles")
                     .and_then(|v| v.as_array())
@@ -63,9 +62,9 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
 
     // proc::kill
     {
-        let kv = kv.clone(); let dk = dk.clone();
+        let kv = kv.clone(); let rt = rt.clone();
         iii.register_function_with_description("proc::kill", "Kill a process by PID", move |input: Value| {
-            let kv = kv.clone(); let dk = dk.clone();
+            let kv = kv.clone(); let rt = rt.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("id is required".into()))?;
@@ -86,7 +85,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                 }
                 let cn = format!("iii-sbx-{id}");
                 let cmd = vec!["kill".into(), format!("-{signal}"), pid.to_string()];
-                exec_in_container(&dk, &cn, &cmd, 10000).await
+                rt.exec_in_sandbox(&cn, &cmd, 10000).await
                     .map_err(iii_sdk::IIIError::Handler)?;
                 Ok(json!({ "killed": pid, "signal": signal }))
             }
@@ -95,9 +94,9 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
 
     // proc::top
     {
-        let kv = kv.clone(); let dk = dk.clone();
+        let kv = kv.clone(); let rt = rt.clone();
         iii.register_function_with_description("proc::top", "Show top processes by resource usage", move |input: Value| {
-            let kv = kv.clone(); let dk = dk.clone();
+            let kv = kv.clone(); let rt = rt.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("id is required".into()))?;
@@ -108,7 +107,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                 }
                 let cn = format!("iii-sbx-{id}");
                 let cmd = vec!["sh".into(), "-c".into(), "ps aux --no-headers".into()];
-                let result = exec_in_container(&dk, &cn, &cmd, 10000).await
+                let result = rt.exec_in_sandbox(&cn, &cmd, 10000).await
                     .map_err(iii_sdk::IIIError::Handler)?;
 
                 let processes: Vec<Value> = result.stdout.lines()

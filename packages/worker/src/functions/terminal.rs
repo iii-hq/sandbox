@@ -1,26 +1,28 @@
 use bollard::exec::{CreateExecOptions, StartExecResults};
-use bollard::Docker;
+use bollard::container::LogOutput;
 use futures_util::StreamExt;
 use iii_sdk::III;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
 use crate::config::EngineConfig;
+use crate::runtime::SandboxRuntime;
+use crate::runtime::docker::DockerRuntime;
 use crate::state::{self, scopes, StateKV};
 use crate::types::Sandbox;
 
-pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, _config: &EngineConfig) {
     // terminal::create
     {
         let kv = kv.clone();
-        let dk = dk.clone();
+        let rt = rt.clone();
         let iii2 = iii.clone();
         iii.register_function_with_description(
             "terminal::create",
             "Create an interactive terminal session with iii channel for PTY streaming",
             move |input: Value| {
                 let kv = kv.clone();
-                let dk = dk.clone();
+                let rt = rt.clone();
                 let iii2 = iii2.clone();
                 async move {
                     let id = input
@@ -65,7 +67,12 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
 
                     let container_name = format!("iii-sbx-{id}");
 
-                    let exec = dk
+                    let docker_rt = rt.as_any()
+                        .downcast_ref::<DockerRuntime>()
+                        .ok_or_else(|| iii_sdk::IIIError::Handler("Terminal requires Docker runtime".into()))?;
+                    let docker = docker_rt.docker_arc();
+
+                    let exec = docker
                         .create_exec(
                             &container_name,
                             CreateExecOptions {
@@ -85,7 +92,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                     let exec_id = exec.id.clone();
 
                     if cols != 80 || rows != 24 {
-                        let _ = dk
+                        let _ = docker
                             .resize_exec(
                                 &exec_id,
                                 bollard::exec::ResizeExecOptions {
@@ -141,7 +148,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                         .await
                         .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
 
-                    let start_result = dk
+                    let start_result = docker
                         .start_exec(&exec_id, None)
                         .await
                         .map_err(|e| {
@@ -159,8 +166,8 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                         tokio::spawn(async move {
                             while let Some(Ok(msg)) = output.next().await {
                                 let data = match msg {
-                                    bollard::container::LogOutput::StdOut { message } => message,
-                                    bollard::container::LogOutput::StdErr { message } => message,
+                                    LogOutput::StdOut { message } => message,
+                                    LogOutput::StdErr { message } => message,
                                     _ => continue,
                                 };
                                 if writer.write(&data).await.is_err() {
@@ -193,13 +200,13 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
     // terminal::resize
     {
         let kv = kv.clone();
-        let dk = dk.clone();
+        let rt = rt.clone();
         iii.register_function_with_description(
             "terminal::resize",
             "Resize a terminal session",
             move |input: Value| {
                 let kv = kv.clone();
-                let dk = dk.clone();
+                let rt = rt.clone();
                 async move {
                     let id = input
                         .get("id")
@@ -239,17 +246,11 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                             iii_sdk::IIIError::Handler("execId missing from session".into())
                         })?;
 
-                    dk.resize_exec(
-                        exec_id,
-                        bollard::exec::ResizeExecOptions {
-                            height: rows,
-                            width: cols,
-                        },
-                    )
-                    .await
-                    .map_err(|e| {
-                        iii_sdk::IIIError::Handler(format!("Failed to resize exec: {e}"))
-                    })?;
+                    rt.resize_exec(exec_id, cols, rows)
+                        .await
+                        .map_err(|e| {
+                            iii_sdk::IIIError::Handler(format!("Failed to resize exec: {e}"))
+                        })?;
 
                     let mut updated = session;
                     updated["cols"] = json!(cols);

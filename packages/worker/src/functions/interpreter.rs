@@ -1,11 +1,10 @@
-use bollard::Docker;
 use iii_sdk::III;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Instant;
 
 use crate::config::EngineConfig;
-use crate::docker::{copy_to_container, exec_in_container};
+use crate::runtime::SandboxRuntime;
 use crate::state::{scopes, StateKV};
 use crate::types::Sandbox;
 
@@ -43,12 +42,11 @@ fn get_install_command(manager: &str, packages: &[String]) -> Vec<String> {
     cmd
 }
 
-pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
-    // interp::execute
+pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, config: &EngineConfig) {
     {
-        let kv = kv.clone(); let dk = dk.clone(); let cfg = config.clone();
+        let kv = kv.clone(); let rt = rt.clone(); let cfg = config.clone();
         iii.register_function_with_description("interp::execute", "Execute code in specified language", move |input: Value| {
-            let kv = kv.clone(); let dk = dk.clone(); let cfg = cfg.clone();
+            let kv = kv.clone(); let rt = rt.clone(); let cfg = cfg.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("id is required".into()))?;
@@ -63,12 +61,12 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                 let filename = format!("/tmp/code{ext}");
                 let cn = format!("iii-sbx-{id}");
 
-                copy_to_container(&dk, &cn, &filename, code.as_bytes()).await
+                rt.copy_to_sandbox(&cn, &filename, code.as_bytes()).await
                     .map_err(iii_sdk::IIIError::Handler)?;
 
                 let exec_cmd = get_exec_command(language, &filename);
                 let start = Instant::now();
-                let result = exec_in_container(&dk, &cn, &exec_cmd, cfg.max_command_timeout * 1000).await
+                let result = rt.exec_in_sandbox(&cn, &exec_cmd, cfg.max_command_timeout * 1000).await
                     .map_err(iii_sdk::IIIError::Handler)?;
                 let execution_time = start.elapsed().as_millis() as u64;
 
@@ -82,11 +80,10 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
         });
     }
 
-    // interp::install
     {
-        let kv = kv.clone(); let dk = dk.clone();
+        let kv = kv.clone(); let rt = rt.clone();
         iii.register_function_with_description("interp::install", "Install packages for language", move |input: Value| {
-            let kv = kv.clone(); let dk = dk.clone();
+            let kv = kv.clone(); let rt = rt.clone();
             async move {
                 let id = input.get("id").and_then(|v| v.as_str())
                     .ok_or_else(|| iii_sdk::IIIError::Handler("id is required".into()))?;
@@ -100,7 +97,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
 
                 let cn = format!("iii-sbx-{id}");
                 let cmd = get_install_command(manager, &packages);
-                let result = exec_in_container(&dk, &cn, &cmd, 120000).await
+                let result = rt.exec_in_sandbox(&cn, &cmd, 120000).await
                     .map_err(iii_sdk::IIIError::Handler)?;
                 if result.exit_code != 0 {
                     return Err(iii_sdk::IIIError::Handler(format!("Install failed: {}", result.stderr)));

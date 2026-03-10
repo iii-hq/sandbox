@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::auth::check_auth;
 use crate::config::EngineConfig;
+use crate::functions::worker::{is_sandbox_scoped, scoped_function_id};
 use crate::ratelimit::RateLimiter;
 
 pub fn register(iii: &Arc<III>, config: &EngineConfig, limiter: &Arc<RateLimiter>) {
@@ -114,6 +115,14 @@ pub fn register(iii: &Arc<III>, config: &EngineConfig, limiter: &Arc<RateLimiter
         ("proxy::request", "POST", "/proxy/:id/:port", true),
         ("proxy::config", "POST", "/sandboxes/:id/proxy/config", true),
 
+        ("snapshot::clone", "POST", "/snapshots/:snapshotId/clone", true),
+
+        ("worker::heartbeat", "POST", "/admin/workers/heartbeat", true),
+        ("worker::select", "GET", "/admin/workers/select", true),
+        ("worker::list", "GET", "/admin/workers", true),
+        ("worker::reap", "POST", "/admin/workers/reap", true),
+        ("worker::migrate-ownership", "POST", "/admin/workers/migrate", true),
+
         ("lifecycle::health", "GET", "/health", false),
         ("lifecycle::ttl-sweep", "POST", "/admin/sweep", true),
     ];
@@ -125,6 +134,7 @@ pub fn register(iii: &Arc<III>, config: &EngineConfig, limiter: &Arc<RateLimiter
         let iii2 = iii.clone();
         let ra = *require_auth;
         let lim = limiter.clone();
+        let scoped = is_sandbox_scoped(fn_id);
 
         iii.register_function(&wrapped_id, move |req: Value| {
             let iii2 = iii2.clone();
@@ -161,6 +171,41 @@ pub fn register(iii: &Arc<III>, config: &EngineConfig, limiter: &Arc<RateLimiter
                     for (k, v) in pp { merged.insert(k.clone(), v.clone()); }
                 }
 
+                if scoped {
+                    let sandbox_id = if let Some(sid) = merged.get("id").and_then(|v| v.as_str()) {
+                        Some(sid.to_string())
+                    } else if let Some(snap_id) = merged.get("snapshotId").and_then(|v| v.as_str()) {
+                        if let Ok(snap_val) = iii2.trigger("snapshot::get-owner", json!({"snapshotId": snap_id})).await {
+                            snap_val.get("sandboxId").and_then(|v| v.as_str()).map(|s| s.to_string())
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
+                    if let Some(sandbox_id) = sandbox_id {
+                        if let Ok(sbx_val) = iii2.trigger("sandbox::get", json!({"id": sandbox_id})).await {
+                            if let Some(owner) = sbx_val.get("workerId").and_then(|v| v.as_str()) {
+                                if owner != cfg.worker_name {
+                                    let scoped_fn = scoped_function_id(owner, &fn_id);
+                                    match iii2.trigger(&scoped_fn, Value::Object(merged)).await {
+                                        Ok(result) => return Ok(json!({"status_code": 200, "body": result})),
+                                        Err(e) => {
+                                            let msg = e.to_string();
+                                            let code = if msg.contains("not found") { 404 }
+                                                else if msg.contains("not allowed") { 403 }
+                                                else if msg.contains("not running") { 409 }
+                                                else { 502 };
+                                            return Ok(json!({"status_code": code, "body": {"error": format!("Forward failed: {msg}")}}));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 match iii2.trigger(&fn_id, Value::Object(merged)).await {
                     Ok(result) => Ok(json!({ "status_code": 200, "body": result })),
                     Err(e) => {
@@ -181,7 +226,9 @@ pub fn register(iii: &Arc<III>, config: &EngineConfig, limiter: &Arc<RateLimiter
         }));
     }
 
-    // Direct streaming triggers (bypass wrap pattern)
+    // TODO: Streaming endpoints bypass owner-based routing. In multi-worker
+    // deployments, requests may land on the wrong worker. Add sandbox ownership
+    // checks and forwarding logic inside each streaming function.
     let _ = iii.register_trigger("http", "cmd::run-stream", json!({
         "api_path": format!("{p}/sandboxes/:id/exec/stream"),
         "http_method": "POST",
@@ -288,13 +335,19 @@ mod tests {
         ("terminal::close", "DELETE", "/sandboxes/:id/terminal/:sessionId", true),
         ("proxy::request", "POST", "/proxy/:id/:port", true),
         ("proxy::config", "POST", "/sandboxes/:id/proxy/config", true),
+        ("snapshot::clone", "POST", "/snapshots/:snapshotId/clone", true),
+        ("worker::heartbeat", "POST", "/admin/workers/heartbeat", true),
+        ("worker::select", "GET", "/admin/workers/select", true),
+        ("worker::list", "GET", "/admin/workers", true),
+        ("worker::reap", "POST", "/admin/workers/reap", true),
+        ("worker::migrate-ownership", "POST", "/admin/workers/migrate", true),
         ("lifecycle::health", "GET", "/health", false),
         ("lifecycle::ttl-sweep", "POST", "/admin/sweep", true),
     ];
 
     #[test]
     fn routes_count() {
-        assert_eq!(ROUTES.len(), 87);
+        assert_eq!(ROUTES.len(), 93);
     }
 
     #[test]
@@ -441,5 +494,48 @@ mod tests {
     fn sandbox_kill_uses_delete() {
         let route = ROUTES.iter().find(|(id, _, _, _)| *id == "sandbox::kill");
         assert_eq!(route.unwrap().1, "DELETE");
+    }
+
+    #[test]
+    fn worker_routes_exist() {
+        let worker_routes: Vec<_> = ROUTES
+            .iter()
+            .filter(|(id, _, _, _)| id.starts_with("worker::"))
+            .collect();
+        assert_eq!(worker_routes.len(), 5);
+    }
+
+    #[test]
+    fn snapshot_clone_route_exists() {
+        let route = ROUTES
+            .iter()
+            .find(|(id, _, _, _)| *id == "snapshot::clone");
+        assert!(route.is_some());
+        assert_eq!(route.unwrap().1, "POST");
+        assert_eq!(route.unwrap().2, "/snapshots/:snapshotId/clone");
+    }
+
+    #[test]
+    fn sandbox_scoped_routes_have_id_param() {
+        use crate::functions::worker::SANDBOX_SCOPED_FUNCTIONS;
+        for (fn_id, _, path, _) in ROUTES {
+            if SANDBOX_SCOPED_FUNCTIONS.contains(fn_id) {
+                assert!(
+                    path.contains(":id") || path.contains(":snapshotId"),
+                    "Sandbox-scoped function {fn_id} route {path} should contain :id or :snapshotId"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn non_scoped_global_routes_exist() {
+        let global_fns = ["sandbox::create", "sandbox::list", "metrics::global"];
+        for gf in &global_fns {
+            assert!(
+                ROUTES.iter().any(|(id, _, _, _)| id == gf),
+                "Global function {gf} should be in routes"
+            );
+        }
     }
 }

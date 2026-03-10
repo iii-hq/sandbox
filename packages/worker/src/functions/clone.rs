@@ -1,21 +1,19 @@
-use bollard::image::CommitContainerOptions;
-use bollard::Docker;
 use iii_sdk::III;
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::EngineConfig;
-use crate::docker::create_container;
+use crate::runtime::SandboxRuntime;
 use crate::state::{generate_id, scopes, StateKV};
 use crate::types::Sandbox;
 
 fn now_ms() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64 }
 
-pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
-    let kv = kv.clone(); let dk = dk.clone(); let cfg = config.clone();
+pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, config: &EngineConfig) {
+    let kv = kv.clone(); let rt = rt.clone(); let cfg = config.clone();
     iii.register_function_with_description("sandbox::clone", "Clone a sandbox with its state", move |input: Value| {
-        let kv = kv.clone(); let dk = dk.clone(); let cfg = cfg.clone();
+        let kv = kv.clone(); let rt = rt.clone(); let cfg = cfg.clone();
         async move {
             let id = input.get("id").and_then(|v| v.as_str())
                 .ok_or_else(|| iii_sdk::IIIError::Handler("id is required".into()))?;
@@ -29,18 +27,13 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
 
             let new_id = generate_id("sbx");
             let cn = format!("iii-sbx-{id}");
-            let opts = CommitContainerOptions {
-                container: cn,
-                repo: format!("iii-sbx-clone-{new_id}"),
-                ..Default::default()
-            };
-            let commit = dk.commit_container(opts, bollard::container::Config::<String>::default()).await
+            let repo = format!("iii-sbx-clone-{new_id}");
+            let image_id = rt.commit_sandbox(&cn, &repo, "").await
                 .map_err(|e| iii_sdk::IIIError::Handler(format!("Commit failed: {e}")))?;
-            let image_id = commit.id.unwrap_or_default();
 
             let mut cloned_config = source.config.clone();
             cloned_config.image = image_id.clone();
-            create_container(&dk, &new_id, &cloned_config, source.entrypoint.as_deref()).await
+            rt.create_sandbox(&new_id, &cloned_config, source.entrypoint.as_deref()).await
                 .map_err(iii_sdk::IIIError::Handler)?;
 
             let now = now_ms();
@@ -55,6 +48,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                 config: cloned_config,
                 metadata: source.metadata.clone(),
                 entrypoint: source.entrypoint.clone(),
+                worker_id: Some(cfg.worker_name.clone()),
             };
 
             kv.set(scopes::SANDBOXES, &new_id, &clone).await

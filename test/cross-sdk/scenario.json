@@ -1,0 +1,65 @@
+{
+  "config": {
+    "baseUrl": "http://localhost:3111",
+    "apiPrefix": "/sandbox",
+    "authToken": "test-token",
+    "image": "alpine:3.19",
+    "timeout": 120
+  },
+  "scenarios": [
+    {
+      "name": "sandbox-lifecycle",
+      "steps": [
+        { "action": "create", "params": { "image": "alpine:3.19", "timeout": 120 }, "expect": { "status": "running" } },
+        { "action": "get", "expect": { "status": "running", "image": "alpine:3.19" } },
+        { "action": "exec", "params": { "command": "echo hello" }, "expect": { "exitCode": 0, "stdout": "hello\n" } },
+        { "action": "pause", "expect": { "status": "paused" } },
+        { "action": "resume", "expect": { "status": "running" } },
+        { "action": "kill", "expect": { "success": true } }
+      ]
+    },
+    {
+      "name": "filesystem-roundtrip",
+      "steps": [
+        { "action": "create", "params": { "image": "alpine:3.19", "timeout": 120 } },
+        { "action": "fs-write", "params": { "path": "/workspace/test.txt", "content": "cross-sdk-test" } },
+        { "action": "fs-read", "params": { "path": "/workspace/test.txt" }, "expect": { "content": "cross-sdk-test" } },
+        { "action": "fs-list", "params": { "path": "/workspace" }, "expect": { "containsFile": "test.txt" } },
+        { "action": "fs-delete", "params": { "path": "/workspace/test.txt" } },
+        { "action": "kill" }
+      ]
+    },
+    {
+      "name": "exec-variations",
+      "steps": [
+        { "action": "create", "params": { "image": "alpine:3.19", "timeout": 120 } },
+        { "action": "exec", "params": { "command": "echo hello" }, "expect": { "exitCode": 0, "stdout": "hello\n" } },
+        { "action": "exec", "params": { "command": "exit 42" }, "expect": { "exitCode": 42 } },
+        { "action": "exec", "params": { "command": "echo err >&2" }, "expect": { "exitCode": 0 } },
+        { "action": "exec", "params": { "command": "pwd", "workdir": "/tmp" }, "expect": { "exitCode": 0, "stdout": "/tmp\n" } },
+        { "action": "kill" }
+      ]
+    },
+    {
+      "name": "env-management",
+      "steps": [
+        { "action": "create", "params": { "image": "alpine:3.19", "timeout": 120 } },
+        { "action": "env-set", "params": { "key": "TEST_VAR", "value": "cross-sdk" } },
+        { "action": "env-get", "params": { "key": "TEST_VAR" }, "expect": { "value": "cross-sdk" } },
+        { "action": "env-list", "expect": { "containsKey": "TEST_VAR" } },
+        { "action": "env-delete", "params": { "key": "TEST_VAR" } },
+        { "action": "kill" }
+      ]
+    },
+    {
+      "name": "snapshot-clone",
+      "steps": [
+        { "action": "create", "params": { "image": "alpine:3.19", "timeout": 120 } },
+        { "action": "exec", "params": { "command": "touch /workspace/marker" } },
+        { "action": "snapshot-create", "params": { "name": "with-marker" } },
+        { "action": "snapshot-list", "expect": { "minCount": 1 } },
+        { "action": "kill" }
+      ]
+    }
+  ]
+}

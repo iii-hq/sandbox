@@ -1,14 +1,13 @@
-use bollard::Docker;
 use iii_sdk::III;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
 use crate::config::EngineConfig;
-use crate::docker::exec_in_container;
+use crate::runtime::SandboxRuntime;
 use crate::state::{scopes, StateKV};
 use crate::types::{PortMapping, Sandbox};
 
-pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, config: &EngineConfig) {
     let http_client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::none())
@@ -18,14 +17,14 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
     // proxy::request
     {
         let kv = kv.clone();
-        let dk = dk.clone();
+        let rt = rt.clone();
         let client = http_client.clone();
         iii.register_function_with_description(
             "proxy::request",
             "Forward HTTP request to a sandbox container port via direct HTTP",
             move |input: Value| {
                 let kv = kv.clone();
-                let dk = dk.clone();
+                let rt = rt.clone();
                 let client = client.clone();
                 async move {
                     let id = input
@@ -107,7 +106,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                     let container_name = format!("iii-sbx-{id}");
 
                     let ctx = ProxyContext {
-                        dk: &dk,
+                        rt: &*rt,
                         client: &client,
                         container_name: &container_name,
                         port,
@@ -202,7 +201,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
 }
 
 struct ProxyContext<'a> {
-    dk: &'a Docker,
+    rt: &'a dyn SandboxRuntime,
     client: &'a reqwest::Client,
     container_name: &'a str,
     port: u16,
@@ -214,7 +213,15 @@ struct ProxyContext<'a> {
 }
 
 async fn try_direct_proxy(ctx: &ProxyContext<'_>) -> Result<Value, iii_sdk::IIIError> {
-    let container_ip = get_container_ip(ctx.dk, ctx.container_name).await?;
+    let container_ip = ctx.rt.sandbox_ip(ctx.container_name).await
+        .map_err(iii_sdk::IIIError::Handler)?;
+
+    if container_ip.is_empty() {
+        return Err(iii_sdk::IIIError::Handler(
+            "Container has no IP address (network may be disabled)".into(),
+        ));
+    }
+
     let url = format!("http://{container_ip}:{}{}", ctx.port, ctx.path);
 
     let send_body = !ctx.body.is_empty()
@@ -303,7 +310,7 @@ async fn proxy_via_exec(ctx: &ProxyContext<'_>) -> Result<Value, iii_sdk::IIIErr
 
     argv.push(format!("http://localhost:{}{}", ctx.port, ctx.path));
 
-    let result = exec_in_container(ctx.dk, ctx.container_name, &argv, ctx.timeout_ms)
+    let result = ctx.rt.exec_in_sandbox(ctx.container_name, &argv, ctx.timeout_ms)
         .await
         .map_err(|e| iii_sdk::IIIError::Handler(format!("Exec proxy failed: {e}")))?;
 
@@ -360,34 +367,6 @@ fn parse_curl_headers(stderr: &str) -> serde_json::Map<String, Value> {
         }
     }
     headers
-}
-
-async fn get_container_ip(dk: &Docker, container_name: &str) -> Result<String, iii_sdk::IIIError> {
-    let inspect = dk
-        .inspect_container(container_name, None)
-        .await
-        .map_err(|e| {
-            iii_sdk::IIIError::Handler(format!("Failed to inspect container: {e}"))
-        })?;
-
-    let ip = inspect
-        .network_settings
-        .as_ref()
-        .and_then(|ns| ns.networks.as_ref())
-        .and_then(|nets| {
-            nets.values()
-                .next()
-                .and_then(|n| n.ip_address.clone())
-        })
-        .unwrap_or_default();
-
-    if ip.is_empty() {
-        return Err(iii_sdk::IIIError::Handler(
-            "Container has no IP address (network may be disabled)".into(),
-        ));
-    }
-
-    Ok(ip)
 }
 
 #[cfg(test)]
