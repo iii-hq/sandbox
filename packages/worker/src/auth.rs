@@ -201,7 +201,7 @@ mod tests {
             engine_url: "ws://localhost:49134".to_string(),
             worker_name: "test".to_string(),
             rest_port: 3111,
-            api_prefix: "/sandbox".to_string(),
+            api_prefix: "sandbox".to_string(),
             auth_token: Some(token.to_string()),
             default_image: "python:3.12-slim".to_string(),
             default_timeout: 3600,

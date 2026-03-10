@@ -57,7 +57,7 @@ impl EngineConfig {
                 .unwrap_or_else(|_| "iii-sandbox".to_string()),
             rest_port: parse_int_or_default("III_REST_PORT", 3111) as u16,
             api_prefix: env::var("III_API_PREFIX")
-                .unwrap_or_else(|_| "/sandbox".to_string()),
+                .unwrap_or_else(|_| "sandbox".to_string()),
             auth_token: env::var("III_AUTH_TOKEN").ok(),
             default_image: env::var("III_DEFAULT_IMAGE")
                 .unwrap_or_else(|_| "python:3.12-slim".to_string()),
@@ -167,7 +167,7 @@ mod tests {
         assert_eq!(cfg.engine_url, "ws://localhost:49134");
         assert_eq!(cfg.worker_name, "iii-sandbox");
         assert_eq!(cfg.rest_port, 3111);
-        assert_eq!(cfg.api_prefix, "/sandbox");
+        assert_eq!(cfg.api_prefix, "sandbox");
         assert!(cfg.auth_token.is_none());
         assert_eq!(cfg.default_image, "python:3.12-slim");
         assert_eq!(cfg.default_timeout, 3600);
