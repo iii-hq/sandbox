@@ -3,18 +3,22 @@ use iii_sdk::III;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
+use crate::auth::check_auth;
 use crate::config::EngineConfig;
 use crate::docker::{container_logs, get_container_stats};
 use crate::state::{scopes, StateKV};
 use crate::types::{Sandbox, SandboxEvent};
 
-pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
     // stream::logs (non-SSE fallback — returns collected log data)
     {
-        let kv = kv.clone(); let dk = dk.clone();
+        let kv = kv.clone(); let dk = dk.clone(); let cfg = config.clone();
         iii.register_function_with_description("stream::logs", "Stream container logs via SSE", move |input: Value| {
-            let kv = kv.clone(); let dk = dk.clone();
+            let kv = kv.clone(); let dk = dk.clone(); let cfg = cfg.clone();
             async move {
+                if let Some(auth_err) = check_auth(&input, &cfg) {
+                    return Ok(auth_err);
+                }
                 let id = input.get("path_params")
                     .and_then(|p| p.get("id"))
                     .and_then(|v| v.as_str())
@@ -40,10 +44,13 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
 
     // stream::metrics (returns one-shot metrics)
     {
-        let kv = kv.clone(); let dk = dk.clone();
+        let kv = kv.clone(); let dk = dk.clone(); let cfg = config.clone();
         iii.register_function_with_description("stream::metrics", "Stream resource metrics via SSE", move |input: Value| {
-            let kv = kv.clone(); let dk = dk.clone();
+            let kv = kv.clone(); let dk = dk.clone(); let cfg = cfg.clone();
             async move {
+                if let Some(auth_err) = check_auth(&input, &cfg) {
+                    return Ok(auth_err);
+                }
                 let id = input.get("path_params")
                     .and_then(|p| p.get("id"))
                     .and_then(|v| v.as_str())
@@ -66,10 +73,13 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
 
     // stream::events (returns recent events)
     {
-        let kv = kv.clone();
+        let kv = kv.clone(); let cfg = config.clone();
         iii.register_function_with_description("stream::events", "Stream events via SSE", move |input: Value| {
-            let kv = kv.clone();
+            let kv = kv.clone(); let cfg = cfg.clone();
             async move {
+                if let Some(auth_err) = check_auth(&input, &cfg) {
+                    return Ok(auth_err);
+                }
                 let query = input.get("query_params").unwrap_or(&Value::Null);
                 let topic = query.get("topic").and_then(|v| v.as_str());
 

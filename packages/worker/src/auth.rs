@@ -2,6 +2,17 @@ use crate::config::EngineConfig;
 use serde_json::{json, Value};
 use subtle::ConstantTimeEq;
 
+fn constant_time_compare(a: &[u8], b: &[u8]) -> bool {
+    let max_len = a.len().max(b.len());
+    let mut a_padded = vec![0u8; max_len];
+    let mut b_padded = vec![0u8; max_len];
+    a_padded[..a.len()].copy_from_slice(a);
+    b_padded[..b.len()].copy_from_slice(b);
+    let content_match = a_padded.ct_eq(&b_padded).unwrap_u8() == 1;
+    let length_match = a.len() == b.len();
+    content_match & length_match
+}
+
 pub fn check_auth(req: &Value, config: &EngineConfig) -> Option<Value> {
     let token = match &config.auth_token {
         Some(t) => t,
@@ -35,9 +46,7 @@ pub fn check_auth(req: &Value, config: &EngineConfig) -> Option<Value> {
     let provided_bytes = provided.as_bytes();
     let expected_bytes = token.as_bytes();
 
-    if provided_bytes.len() != expected_bytes.len()
-        || provided_bytes.ct_eq(expected_bytes).unwrap_u8() != 1
-    {
+    if !constant_time_compare(provided_bytes, expected_bytes) {
         return Some(json!({
             "status_code": 403,
             "body": { "error": "Invalid token" }

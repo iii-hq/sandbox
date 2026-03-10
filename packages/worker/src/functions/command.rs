@@ -3,7 +3,7 @@ use iii_sdk::III;
 use serde_json::Value;
 use std::sync::Arc;
 
-use crate::auth::{validate_command, validate_path};
+use crate::auth::{check_auth, validate_command, validate_path};
 use crate::config::EngineConfig;
 use crate::docker::exec_in_container;
 use crate::state::{scopes, StateKV};
@@ -63,6 +63,9 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
             let dk = dk.clone();
             let cfg = cfg.clone();
             async move {
+                if let Some(auth_err) = check_auth(&input, &cfg) {
+                    return Ok(auth_err);
+                }
                 let id = input.get("path_params")
                     .and_then(|p| p.get("id"))
                     .and_then(|v| v.as_str())
