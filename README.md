@@ -22,7 +22,7 @@ Secure, isolated Docker sandboxes for code execution. Built on [iii-engine](http
   └────────────────┬─────────────────────────┘
                    ▼
   ┌─────────────────────────────────────────┐
-  │        Worker  (iii-sdk, Rust)            │
+  │        Worker  (iii-sdk, Rust)          │
   │                                         │
   │  84 Functions · 86 Endpoints · 39 Tools │
   │  sandbox · exec · fs · git · env · proc │
