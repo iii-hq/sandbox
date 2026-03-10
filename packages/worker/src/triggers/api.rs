@@ -4,8 +4,9 @@ use std::sync::Arc;
 
 use crate::auth::check_auth;
 use crate::config::EngineConfig;
+use crate::ratelimit::RateLimiter;
 
-pub fn register(iii: &Arc<III>, config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, config: &EngineConfig, limiter: &Arc<RateLimiter>) {
     let p = &config.api_prefix;
 
     let routes: Vec<(&str, &str, &str, bool)> = vec![
@@ -116,15 +117,29 @@ pub fn register(iii: &Arc<III>, config: &EngineConfig) {
         let cfg = config.clone();
         let iii2 = iii.clone();
         let ra = *require_auth;
+        let lim = limiter.clone();
 
         iii.register_function(&wrapped_id, move |req: Value| {
             let iii2 = iii2.clone();
             let fn_id = fn_id_owned.clone();
             let cfg = cfg.clone();
+            let lim = lim.clone();
             async move {
                 if ra {
                     if let Some(auth_err) = check_auth(&req, &cfg) {
                         return Ok(auth_err);
+                    }
+
+                    let raw_token = req.get("headers")
+                        .and_then(|h| h.get("authorization"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let normalized = raw_token.strip_prefix("Bearer ").unwrap_or(raw_token);
+                    if !normalized.is_empty() && !lim.check_token(normalized) {
+                        return Ok(json!({
+                            "status_code": 429,
+                            "body": { "error": "Rate limit exceeded" }
+                        }));
                     }
                 }
 

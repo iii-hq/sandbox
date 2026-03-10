@@ -213,6 +213,10 @@ mod tests {
             allowed_images: vec!["*".to_string()],
             workspace_dir: "/workspace".to_string(),
             max_command_timeout: 300,
+            warm_pool_size: 0,
+            warm_pool_replenish_interval: "*/30 * * * * *".to_string(),
+            warm_pool_profiles: vec![],
+            rate_limit: crate::ratelimit::RateLimitConfig::default(),
         }
     }
 
