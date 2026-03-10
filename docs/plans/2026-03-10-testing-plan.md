@@ -126,7 +126,7 @@ integration-test:
         III_ENGINE_URL=ws://localhost:49134 \
         ./packages/worker/target/release/iii-sandbox-worker &
         sleep 3
-        cargo test --manifest-path packages/worker/Cargo.toml --test '*'
+        cargo test --manifest-path packages/worker/Cargo.toml --tests
 ```
 
 ## 3. SDK Cross-Language Tests

@@ -48,11 +48,26 @@ iii.register_function_with_description(&fn_id, "Get sandbox (worker-scoped)", ha
 
 When a request arrives at a worker that doesn't own the sandbox:
 1. Look up `sandbox.worker_id` from KV
-2. Call `iii.trigger(&format!("worker::{}::sandbox::get", sandbox.worker_id), payload)`
-3. The engine routes to the specific worker that registered that scoped function
+2. Check the owner worker is alive (last heartbeat < 30s ago in KV)
+3. If alive: `iii.trigger(&format!("worker::{}::sandbox::get", sandbox.worker_id), payload)`
+4. The engine routes to the specific worker that registered that scoped function
 
 For `sandbox::create`, a coordinator function `worker::select` picks the
 least-loaded worker, then triggers `worker::{target_id}::sandbox::create`.
+
+#### Dead-worker recovery
+
+If a worker's heartbeat is stale (>30s), it is considered dead. Recovery:
+
+1. `worker::reap` (cron every 60s) scans heartbeats for stale workers
+2. For each dead worker, list all sandboxes with that `worker_id`
+3. Orphaned sandboxes are either:
+   - **Reassigned**: A live worker claims ownership (sets `worker_id` to itself),
+     re-registers scoped functions, and verifies the container still exists
+   - **Marked dead**: If the container is gone, sandbox status is set to `expired`
+4. The dead worker's heartbeat record is deleted from KV
+
+This prevents forwarded calls from silently failing when the owner is down.
 
 ### Backward Compatibility
 
@@ -65,9 +80,26 @@ to avoid breaking deserialization of existing KV records that lack the field:
 pub worker_id: Option<String>,
 ```
 
-On load, if `worker_id` is `None`, the sandbox is treated as owned by the current
-(single) worker. This preserves compatibility during the transition period.
-A migration function can backfill `worker_id` for existing records.
+**Pre-scale migration is required** before starting a second worker.
+A `worker::migrate-ownership` function must run once to backfill `worker_id`
+for all existing sandbox records:
+
+```rust
+// worker::migrate-ownership — run once before scaling to 2+ workers
+let sandboxes: Vec<Sandbox> = kv.list(scopes::SANDBOXES).await;
+for mut sbx in sandboxes {
+    if sbx.worker_id.is_none() {
+        sbx.worker_id = Some(self_worker_id.clone());
+        kv.set(scopes::SANDBOXES, &sbx.id, &sbx).await?;
+    }
+}
+```
+
+Until migration runs, multi-worker mode must not be enabled. The startup
+sequence checks: if any sandbox has `worker_id: None` and the cluster has
+>1 worker, refuse to start and log an error directing the operator to run
+the migration first. This prevents two workers from both claiming the same
+legacy sandbox.
 
 ### Load Balancing
 
@@ -96,20 +128,28 @@ A `worker::select` function picks least-loaded worker for new creates.
 `sandbox::clone` does full container commit + create (~5-10s).
 Competitors: E2B snapshots in <1s via Firecracker snapshots.
 
-### Solution: Overlayfs Snapshots
+### Solution: Image-layer Snapshots with Isolated Writable Storage
 
-Use Docker's `--volumes-from` and committed image layers for fast cloning.
+Use committed image layers for fast cloning. Each clone gets its own
+writable layer — no shared mutable state between sandboxes.
 
 ```rust
 // 1. Commit current state as image layer (~1s)
 docker.commit_container(commit_opts).await?;
 
 // 2. Create new container from committed image (~500ms)
+//    Docker automatically gives each container its own writable overlay layer.
+//    Do NOT use --volumes-from (it shares mutable volumes, breaking isolation).
 docker.create_container(opts_from_committed_image).await?;
 
 // 3. Start clone (~200ms)
 docker.start_container(&clone_name, None).await?;
 ```
+
+Each clone is fully isolated: the committed image provides read-only base state,
+and Docker's overlayfs gives each container its own writable layer on top.
+If the source sandbox has named volumes, the clone creates new anonymous
+volumes (not shared) and copies data into them during the clone step.
 
 With warm pool: pre-create containers from popular snapshot images.
 
@@ -151,9 +191,15 @@ Rate limiting at two levels:
 
 New file: `packages/worker/src/ratelimit.rs`
 
+The rate limiter must be safe to share across concurrent async handlers.
+Use `Arc<Mutex<...>>` for the in-process implementation. For multi-worker
+deployments, replace with a KV-backed implementation using iii-engine state.
+
 ```rust
+use std::sync::{Arc, Mutex};
+
 pub struct RateLimiter {
-    limits: HashMap<String, TokenBucket>,
+    inner: Arc<Mutex<HashMap<String, TokenBucket>>>,
 }
 
 pub struct TokenBucket {
@@ -164,13 +210,27 @@ pub struct TokenBucket {
 }
 
 impl RateLimiter {
-    pub fn check(&mut self, key: &str) -> Result<(), RateLimitError> {
-        let bucket = self.limits.entry(key.to_string())
+    pub fn new() -> Self {
+        Self { inner: Arc::new(Mutex::new(HashMap::new())) }
+    }
+
+    pub fn check(&self, key: &str) -> Result<(), RateLimitError> {
+        let mut limits = self.inner.lock().unwrap();
+        let bucket = limits.entry(key.to_string())
             .or_insert_with(|| TokenBucket::new(DEFAULT_CAPACITY, DEFAULT_RATE));
         bucket.try_consume()
     }
 }
 ```
+
+**Single-worker**: In-process `Arc<Mutex<...>>` is sufficient. The limiter is
+created once in `main.rs` and passed to `check_auth_and_rate` via shared state.
+
+**Multi-worker**: In-process limits are per-worker only — a client can bypass
+quotas by distributing requests across workers. For cluster-wide enforcement,
+replace the `HashMap` with KV-backed counters via `iii.trigger("state::*", ...)`.
+This trades ~1ms latency per rate check for global consistency. Alternatively,
+set per-worker limits to `global_limit / num_workers` as a simpler approximation.
 
 ### Config
 
@@ -187,15 +247,29 @@ rate_limits:
 
 ### Integration
 
-Check rate limit in `auth.rs` before dispatching any function:
+Check rate limit in `auth.rs` before dispatching any function. The
+`RateLimiter` is shared via `Arc` (cloned into each handler closure):
+
 ```rust
-pub fn check_auth_and_rate(token: &str, sandbox_id: Option<&str>) -> Result<()> {
-    check_auth(token)?;
-    rate_limiter.check(&format!("token:{}", token))?;
-    if let Some(id) = sandbox_id {
-        rate_limiter.check(&format!("sandbox:{}", id))?;
+pub fn check_auth_and_rate(
+    req: &Value,
+    config: &EngineConfig,
+    limiter: &RateLimiter,
+    sandbox_id: Option<&str>,
+) -> Option<Value> {
+    if let Some(err) = check_auth(req, config) {
+        return Some(err);
     }
-    Ok(())
+    let token = extract_token(req);
+    if let Err(_) = limiter.check(&format!("token:{}", token)) {
+        return Some(json!({ "status_code": 429, "body": { "error": "Rate limit exceeded" } }));
+    }
+    if let Some(id) = sandbox_id {
+        if let Err(_) = limiter.check(&format!("sandbox:{}", id)) {
+            return Some(json!({ "status_code": 429, "body": { "error": "Rate limit exceeded" } }));
+        }
+    }
+    None
 }
 ```
 
