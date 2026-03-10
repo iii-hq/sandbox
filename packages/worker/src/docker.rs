@@ -302,13 +302,11 @@ pub async fn list_container_dir(
     container_name: &str,
     path: &str,
 ) -> Result<Vec<FileInfo>, String> {
+    let quoted = path.replace('\'', "'\\''");
     let cmd = vec![
-        "find".to_string(),
-        path.to_string(),
-        "-maxdepth".to_string(),
-        "1".to_string(),
-        "-printf".to_string(),
-        "%f\t%s\t%T@\t%y\n".to_string(),
+        "sh".to_string(),
+        "-c".to_string(),
+        format!("find '{}' -maxdepth 1 ! -name '.' -exec sh -c 'for f; do name=$(basename \"$f\"); if [ -d \"$f\" ]; then t=d; s=0; elif [ -L \"$f\" ]; then t=l; s=0; else t=f; s=$(wc -c < \"$f\" 2>/dev/null || echo 0); fi; echo \"$name\\t$s\\t0\\t$t\"; done' _ {{}} +", quoted),
     ];
     let result = exec_in_container(docker, container_name, &cmd, 10000).await?;
     if result.exit_code != 0 {
@@ -384,7 +382,7 @@ pub async fn get_file_info(
     let cmd = vec![
         "sh".to_string(),
         "-c".to_string(),
-        format!("stat --format '%n\t%s\t%A\t%U\t%G\t%F\t%Y' {quoted}"),
+        format!("stat -c '%n\t%s\t%A\t%U\t%G\t%F\t%Y' {quoted}"),
     ];
     let result = exec_in_container(docker, container_name, &cmd, 10000).await?;
     if result.exit_code != 0 {

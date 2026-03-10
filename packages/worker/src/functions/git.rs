@@ -38,10 +38,14 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                 let depth = input.get("depth").and_then(|v| v.as_u64());
                 let path = input.get("path").and_then(|v| v.as_str());
 
+                if url.contains('`') || url.contains("$(") {
+                    return Err(iii_sdk::IIIError::Handler("Invalid git URL".into()));
+                }
+                let safe_url = url.replace('\'', "'\\''");
                 let mut cmd = "git clone".to_string();
                 if let Some(b) = branch { cmd.push_str(&format!(" --branch \"{b}\"")); }
                 if let Some(d) = depth { cmd.push_str(&format!(" --depth {d}")); }
-                cmd.push_str(&format!(" \"{url}\""));
+                cmd.push_str(&format!(" '{safe_url}'"));
                 if let Some(p) = path { cmd.push_str(&format!(" \"{p}\"")); }
 
                 let sandbox: Sandbox = kv.get(scopes::SANDBOXES, id).await

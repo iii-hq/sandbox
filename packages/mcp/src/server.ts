@@ -13,6 +13,10 @@ import {
 import type { ClientConfig } from "@iii-sandbox/sdk";
 import { tools } from "./tools.js";
 
+const toolMap: Record<string, (typeof tools)[number]> = Object.fromEntries(
+  tools.map((t) => [t.name, t]),
+);
+
 export function createMcpServer(config?: ClientConfig): McpServer {
   const server = new McpServer({
     name: "iii-sandbox",
@@ -25,10 +29,12 @@ export function createMcpServer(config?: ClientConfig): McpServer {
     token: config?.token ?? process.env.III_SANDBOX_TOKEN,
   };
 
+  const t = toolMap;
+
   server.tool(
-    tools[0].name,
-    tools[0].description,
-    tools[0].inputSchema.shape,
+    t["sandbox_create"].name,
+    t["sandbox_create"].description,
+    t["sandbox_create"].inputSchema.shape,
     async (args) => {
       const sbx = await createSandbox({
         ...args,
@@ -42,9 +48,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[1].name,
-    tools[1].description,
-    tools[1].inputSchema.shape,
+    t["sandbox_exec"].name,
+    t["sandbox_exec"].description,
+    t["sandbox_exec"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const result = await sbx.exec(args.command, args.timeout);
@@ -59,9 +65,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[2].name,
-    tools[2].description,
-    tools[2].inputSchema.shape,
+    t["sandbox_run_code"].name,
+    t["sandbox_run_code"].description,
+    t["sandbox_run_code"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const result = await sbx.interpreter.run(args.code, args.language);
@@ -80,9 +86,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[3].name,
-    tools[3].description,
-    tools[3].inputSchema.shape,
+    t["sandbox_read_file"].name,
+    t["sandbox_read_file"].description,
+    t["sandbox_read_file"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const content = await sbx.filesystem.read(args.path);
@@ -91,9 +97,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[4].name,
-    tools[4].description,
-    tools[4].inputSchema.shape,
+    t["sandbox_write_file"].name,
+    t["sandbox_write_file"].description,
+    t["sandbox_write_file"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       await sbx.filesystem.write(args.path, args.content);
@@ -102,9 +108,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[5].name,
-    tools[5].description,
-    tools[5].inputSchema.shape,
+    t["sandbox_list_files"].name,
+    t["sandbox_list_files"].description,
+    t["sandbox_list_files"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const files = await sbx.filesystem.list(args.path);
@@ -115,9 +121,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[6].name,
-    tools[6].description,
-    tools[6].inputSchema.shape,
+    t["sandbox_install_package"].name,
+    t["sandbox_install_package"].description,
+    t["sandbox_install_package"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const output = await sbx.interpreter.install(
@@ -129,9 +135,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[7].name,
-    tools[7].description,
-    tools[7].inputSchema.shape,
+    t["sandbox_list"].name,
+    t["sandbox_list"].description,
+    t["sandbox_list"].inputSchema.shape,
     async () => {
       const sandboxes = await listSandboxes(cfg);
       return {
@@ -141,9 +147,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[8].name,
-    tools[8].description,
-    tools[8].inputSchema.shape,
+    t["sandbox_kill"].name,
+    t["sandbox_kill"].description,
+    t["sandbox_kill"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       await sbx.kill();
@@ -154,9 +160,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[9].name,
-    tools[9].description,
-    tools[9].inputSchema.shape,
+    t["sandbox_metrics"].name,
+    t["sandbox_metrics"].description,
+    t["sandbox_metrics"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const metrics = await sbx.metrics();
@@ -167,9 +173,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[10].name,
-    tools[10].description,
-    tools[10].inputSchema.shape,
+    t["sandbox_env_get"].name,
+    t["sandbox_env_get"].description,
+    t["sandbox_env_get"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const result = await sbx.env.get(args.key);
@@ -182,9 +188,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[11].name,
-    tools[11].description,
-    tools[11].inputSchema.shape,
+    t["sandbox_env_set"].name,
+    t["sandbox_env_set"].description,
+    t["sandbox_env_set"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const result = await sbx.env.set(args.vars);
@@ -200,9 +206,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[12].name,
-    tools[12].description,
-    tools[12].inputSchema.shape,
+    t["sandbox_env_list"].name,
+    t["sandbox_env_list"].description,
+    t["sandbox_env_list"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const result = await sbx.env.list();
@@ -213,9 +219,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[13].name,
-    tools[13].description,
-    tools[13].inputSchema.shape,
+    t["sandbox_git_clone"].name,
+    t["sandbox_git_clone"].description,
+    t["sandbox_git_clone"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const result = await sbx.git.clone(args.url, {
@@ -234,9 +240,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[14].name,
-    tools[14].description,
-    tools[14].inputSchema.shape,
+    t["sandbox_git_status"].name,
+    t["sandbox_git_status"].description,
+    t["sandbox_git_status"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const status = await sbx.git.status(args.path);
@@ -247,9 +253,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[15].name,
-    tools[15].description,
-    tools[15].inputSchema.shape,
+    t["sandbox_git_commit"].name,
+    t["sandbox_git_commit"].description,
+    t["sandbox_git_commit"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const result = await sbx.git.commit(args.message, {
@@ -267,9 +273,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[16].name,
-    tools[16].description,
-    tools[16].inputSchema.shape,
+    t["sandbox_git_diff"].name,
+    t["sandbox_git_diff"].description,
+    t["sandbox_git_diff"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const result = await sbx.git.diff({
@@ -281,9 +287,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[17].name,
-    tools[17].description,
-    tools[17].inputSchema.shape,
+    t["sandbox_process_list"].name,
+    t["sandbox_process_list"].description,
+    t["sandbox_process_list"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const result = await sbx.processes.list();
@@ -296,9 +302,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[18].name,
-    tools[18].description,
-    tools[18].inputSchema.shape,
+    t["sandbox_process_kill"].name,
+    t["sandbox_process_kill"].description,
+    t["sandbox_process_kill"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const result = await sbx.processes.kill(args.pid, args.signal);
@@ -314,9 +320,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[19].name,
-    tools[19].description,
-    tools[19].inputSchema.shape,
+    t["sandbox_template_list"].name,
+    t["sandbox_template_list"].description,
+    t["sandbox_template_list"].inputSchema.shape,
     async () => {
       const templates = await listTemplates(cfg);
       return {
@@ -326,9 +332,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[20].name,
-    tools[20].description,
-    tools[20].inputSchema.shape,
+    t["sandbox_snapshot_create"].name,
+    t["sandbox_snapshot_create"].description,
+    t["sandbox_snapshot_create"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const snapshot = await sbx.snapshot(args.name);
@@ -339,9 +345,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[21].name,
-    tools[21].description,
-    tools[21].inputSchema.shape,
+    t["sandbox_snapshot_restore"].name,
+    t["sandbox_snapshot_restore"].description,
+    t["sandbox_snapshot_restore"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const result = await sbx.restore(args.snapshotId);
@@ -352,9 +358,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[22].name,
-    tools[22].description,
-    tools[22].inputSchema.shape,
+    t["sandbox_snapshot_list"].name,
+    t["sandbox_snapshot_list"].description,
+    t["sandbox_snapshot_list"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const result = await sbx.listSnapshots();
@@ -367,9 +373,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[23].name,
-    tools[23].description,
-    tools[23].inputSchema.shape,
+    t["sandbox_clone"].name,
+    t["sandbox_clone"].description,
+    t["sandbox_clone"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const cloned = await sbx.clone(args.name);
@@ -380,9 +386,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[24].name,
-    tools[24].description,
-    tools[24].inputSchema.shape,
+    t["sandbox_port_expose"].name,
+    t["sandbox_port_expose"].description,
+    t["sandbox_port_expose"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const mapping = await sbx.ports.expose(
@@ -397,9 +403,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[25].name,
-    tools[25].description,
-    tools[25].inputSchema.shape,
+    t["sandbox_port_list"].name,
+    t["sandbox_port_list"].description,
+    t["sandbox_port_list"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const result = await sbx.ports.list();
@@ -412,9 +418,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[28].name,
-    tools[28].description,
-    tools[28].inputSchema.shape,
+    t["sandbox_exec_queue"].name,
+    t["sandbox_exec_queue"].description,
+    t["sandbox_exec_queue"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const job = await sbx.queue.submit(args.command, {
@@ -428,9 +434,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[29].name,
-    tools[29].description,
-    tools[29].inputSchema.shape,
+    t["sandbox_queue_status"].name,
+    t["sandbox_queue_status"].description,
+    t["sandbox_queue_status"].inputSchema.shape,
     async (args) => {
       const client = new HttpClient({ baseUrl: cfg.baseUrl, token: cfg.token });
       const job = await client.get(`/sandbox/queue/${args.jobId}/status`);
@@ -445,9 +451,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[26].name,
-    tools[26].description,
-    tools[26].inputSchema.shape,
+    t["sandbox_events_history"].name,
+    t["sandbox_events_history"].description,
+    t["sandbox_events_history"].inputSchema.shape,
     async (args) => {
       const result = await events.history({
         sandboxId: args.sandboxId,
@@ -461,9 +467,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[27].name,
-    tools[27].description,
-    tools[27].inputSchema.shape,
+    t["sandbox_events_publish"].name,
+    t["sandbox_events_publish"].description,
+    t["sandbox_events_publish"].inputSchema.shape,
     async (args) => {
       const event = await events.publish(
         args.topic,
@@ -481,9 +487,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[30].name,
-    tools[30].description,
-    tools[30].inputSchema.shape,
+    t["sandbox_network_create"].name,
+    t["sandbox_network_create"].description,
+    t["sandbox_network_create"].inputSchema.shape,
     async (args) => {
       const result = await networkMgr.create(args.name, args.driver);
       return {
@@ -493,9 +499,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[31].name,
-    tools[31].description,
-    tools[31].inputSchema.shape,
+    t["sandbox_network_connect"].name,
+    t["sandbox_network_connect"].description,
+    t["sandbox_network_connect"].inputSchema.shape,
     async (args) => {
       const result = await networkMgr.connect(args.networkId, args.sandboxId);
       return {
@@ -510,9 +516,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[32].name,
-    tools[32].description,
-    tools[32].inputSchema.shape,
+    t["sandbox_stream_logs"].name,
+    t["sandbox_stream_logs"].description,
+    t["sandbox_stream_logs"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const logs: string[] = [];
@@ -534,9 +540,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[33].name,
-    tools[33].description,
-    tools[33].inputSchema.shape,
+    t["sandbox_traces"].name,
+    t["sandbox_traces"].description,
+    t["sandbox_traces"].inputSchema.shape,
     async (args) => {
       const result = await observability.traces({
         sandboxId: args.sandboxId,
@@ -550,9 +556,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[34].name,
-    tools[34].description,
-    tools[34].inputSchema.shape,
+    t["sandbox_metrics_dashboard"].name,
+    t["sandbox_metrics_dashboard"].description,
+    t["sandbox_metrics_dashboard"].inputSchema.shape,
     async () => {
       const result = await observability.metrics();
       return {
@@ -562,9 +568,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[35].name,
-    tools[35].description,
-    tools[35].inputSchema.shape,
+    t["sandbox_set_alert"].name,
+    t["sandbox_set_alert"].description,
+    t["sandbox_set_alert"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const alert = await sbx.monitor.setAlert(
@@ -579,9 +585,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[36].name,
-    tools[36].description,
-    tools[36].inputSchema.shape,
+    t["sandbox_alert_history"].name,
+    t["sandbox_alert_history"].description,
+    t["sandbox_alert_history"].inputSchema.shape,
     async (args) => {
       const sbx = await getSandbox(args.sandboxId, cfg);
       const result = await sbx.monitor.history(args.limit);
@@ -596,9 +602,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[37].name,
-    tools[37].description,
-    tools[37].inputSchema.shape,
+    t["sandbox_volume_create"].name,
+    t["sandbox_volume_create"].description,
+    t["sandbox_volume_create"].inputSchema.shape,
     async (args) => {
       const result = await volumeMgr.create(args.name, args.driver);
       return {
@@ -608,9 +614,9 @@ export function createMcpServer(config?: ClientConfig): McpServer {
   );
 
   server.tool(
-    tools[38].name,
-    tools[38].description,
-    tools[38].inputSchema.shape,
+    t["sandbox_volume_attach"].name,
+    t["sandbox_volume_attach"].description,
+    t["sandbox_volume_attach"].inputSchema.shape,
     async (args) => {
       const result = await volumeMgr.attach(
         args.volumeId,

@@ -57,9 +57,15 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                     return Err(iii_sdk::IIIError::Handler(format!("Sandbox is not running: {}", sandbox.status)));
                 }
                 let cn = format!("iii-sbx-{id}");
+                for (key, _) in &vars {
+                    if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                        return Err(iii_sdk::IIIError::Handler(format!("Invalid env key: {key}")));
+                    }
+                }
                 let env_lines: String = vars.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("\n");
-                let escaped = env_lines.replace('\'', "'\\''");
-                let cmd = vec!["sh".into(), "-c".into(), format!("printf '%s\\n' '{escaped}' >> /etc/environment")];
+                use base64::Engine;
+                let encoded = base64::engine::general_purpose::STANDARD.encode(env_lines.as_bytes());
+                let cmd = vec!["sh".into(), "-c".into(), format!("echo '{encoded}' | base64 -d >> /etc/environment")];
                 exec_in_container(&dk, &cn, &cmd, 10000).await
                     .map_err(|e| iii_sdk::IIIError::Handler(e))?;
 
@@ -117,6 +123,9 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                     .ok_or_else(|| iii_sdk::IIIError::Handler(format!("Sandbox not found: {id}")))?;
                 if sandbox.status != "running" {
                     return Err(iii_sdk::IIIError::Handler(format!("Sandbox is not running: {}", sandbox.status)));
+                }
+                if !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                    return Err(iii_sdk::IIIError::Handler("Invalid env key: must be alphanumeric/underscore".into()));
                 }
                 let cn = format!("iii-sbx-{id}");
                 let cmd = vec!["sh".into(), "-c".into(), format!("sed -i '/^{key}=/d' /etc/environment")];

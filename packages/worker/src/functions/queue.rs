@@ -143,8 +143,12 @@ pub fn register(iii: &Arc<III>, kv: &StateKV, _config: &EngineConfig) {
                     }
                 }
 
+                let should_retry = job.status == "pending";
                 kv.set(scopes::QUEUE, &job.id, &job).await
                     .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
+                if should_retry {
+                    let _ = iii2.trigger_void("queue::process", json!({ "jobId": &job.id }));
+                }
                 serde_json::to_value(&job).map_err(|e| iii_sdk::IIIError::Serde(e.to_string()))
             }
         });
