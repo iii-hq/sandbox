@@ -117,9 +117,43 @@ The handler:
 
 ### SDK Addition
 
+Add `getProxyUrl()` to the existing `PortManager` (in `packages/sdk/src/port.ts`):
+
+```typescript
+// packages/sdk/src/port.ts — add to existing PortManager class
+getProxyUrl(containerPort: number): string {
+    const base = this.client.baseUrl.replace(/\/+$/, '');
+    return `${base}/sandbox/proxy/${this.sandboxId}/${containerPort}`;
+}
+```
+
+Usage:
 ```typescript
 const url = sandbox.ports.getProxyUrl(3000);
-// Returns: https://sbx-abc123-3000.sandbox.example.com
+// Returns: http://localhost:3111/sandbox/proxy/sbx_abc123/3000
+```
+
+Add `TerminalManager` as a new manager attached to Sandbox:
+
+```typescript
+// packages/sdk/src/terminal.ts — new file
+export class TerminalManager {
+    constructor(private client: HttpClient, private sandboxId: string) {}
+
+    async create(opts: { cols?: number; rows?: number } = {}): Promise<TerminalSession> { ... }
+}
+```
+
+Wire into `sandbox.ts`:
+```typescript
+readonly terminal: TerminalManager;  // add property
+// In constructor:
+this.terminal = new TerminalManager(client, this.id);
+```
+
+Export from `index.ts`:
+```typescript
+export { TerminalManager, TerminalSession } from './terminal';
 ```
 
 ## Files to Create/Modify
@@ -130,7 +164,11 @@ const url = sandbox.ports.getProxyUrl(3000);
 | `packages/worker/src/functions/proxy.rs` | CREATE |
 | `packages/worker/src/functions/mod.rs` | MODIFY — add terminal, proxy |
 | `packages/worker/src/triggers/api.rs` | MODIFY — add routes |
-| `packages/sdk/src/managers/terminal.ts` | CREATE |
-| `packages/sdk/src/managers/proxy.ts` | CREATE |
-| `packages/sdk-python/iii_sandbox/managers/terminal.py` | CREATE |
-| `packages/sdk-rust/src/managers/terminal.rs` | CREATE |
+| `packages/sdk/src/port.ts` | MODIFY — add `getProxyUrl()` to existing PortManager |
+| `packages/sdk/src/terminal.ts` | CREATE — new TerminalManager |
+| `packages/sdk/src/sandbox.ts` | MODIFY — add `terminal: TerminalManager` property |
+| `packages/sdk/src/index.ts` | MODIFY — export TerminalManager |
+| `packages/sdk-python/iii_sandbox/port.py` | MODIFY — add `get_proxy_url()` |
+| `packages/sdk-python/iii_sandbox/terminal.py` | CREATE |
+| `packages/sdk-rust/src/port.rs` | MODIFY — add `get_proxy_url()` |
+| `packages/sdk-rust/src/terminal.rs` | CREATE |

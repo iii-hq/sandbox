@@ -33,7 +33,41 @@ let iii = III::with_metadata(
 ```
 
 On `sandbox::create`: worker sets `sandbox.worker_id = self.worker_id` in KV.
-On any sandbox operation: check `sandbox.worker_id == self.worker_id`, if not, forward via `iii.trigger()` to correct worker.
+
+#### Worker-targeted dispatch
+
+Since all workers register the same function IDs, plain `iii.trigger("sandbox::get", ...)`
+would hit any worker — not necessarily the sandbox owner. To solve this, each worker
+registers worker-scoped functions using its worker_id as a namespace:
+
+```rust
+// Each worker registers its own scoped function
+let fn_id = format!("worker::{}::sandbox::get", worker_id);
+iii.register_function_with_description(&fn_id, "Get sandbox (worker-scoped)", handler);
+```
+
+When a request arrives at a worker that doesn't own the sandbox:
+1. Look up `sandbox.worker_id` from KV
+2. Call `iii.trigger(&format!("worker::{}::sandbox::get", sandbox.worker_id), payload)`
+3. The engine routes to the specific worker that registered that scoped function
+
+For `sandbox::create`, a coordinator function `worker::select` picks the
+least-loaded worker, then triggers `worker::{target_id}::sandbox::create`.
+
+### Backward Compatibility
+
+The `worker_id` field on `Sandbox` must be `Option<String>` with `#[serde(default)]`
+to avoid breaking deserialization of existing KV records that lack the field:
+
+```rust
+// In types.rs — Sandbox struct
+#[serde(default, skip_serializing_if = "Option::is_none")]
+pub worker_id: Option<String>,
+```
+
+On load, if `worker_id` is `None`, the sandbox is treated as owned by the current
+(single) worker. This preserves compatibility during the transition period.
+A migration function can backfill `worker_id` for existing records.
 
 ### Load Balancing
 
@@ -48,9 +82,10 @@ A `worker::select` function picks least-loaded worker for new creates.
 
 | File | Action |
 |------|--------|
-| `packages/worker/src/functions/worker.rs` | CREATE — heartbeat, select, forward |
-| `packages/worker/src/types.rs` | MODIFY — add worker_id to Sandbox |
+| `packages/worker/src/functions/worker.rs` | CREATE — heartbeat, select, forward, scoped registration |
+| `packages/worker/src/types.rs` | MODIFY — add `worker_id: Option<String>` with `#[serde(default)]` |
 | `packages/worker/src/config.rs` | MODIFY — add worker_id config |
+| `packages/worker/src/triggers/api.rs` | MODIFY — add routing lookup before dispatch |
 
 ---
 

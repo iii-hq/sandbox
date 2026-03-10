@@ -17,6 +17,20 @@ pub enum IsolationBackend {
     Firecracker,
 }
 
+pub struct CreateConfig {
+    pub id: String,
+    pub name: String,
+    pub image: String,
+    pub hostname: Option<String>,
+    pub entrypoint: Option<Vec<String>>,
+    pub env: Option<HashMap<String, String>>,
+    pub workdir: Option<String>,
+    pub memory_mb: u64,
+    pub cpu: f64,
+    pub labels: HashMap<String, String>,
+    pub network_enabled: bool,
+}
+
 pub trait SandboxRuntime: Send + Sync {
     async fn create(&self, config: &CreateConfig) -> Result<String>;
     async fn start(&self, id: &str) -> Result<()>;
@@ -24,9 +38,15 @@ pub trait SandboxRuntime: Send + Sync {
     async fn exec(&self, id: &str, cmd: &[&str]) -> Result<ExecResult>;
     async fn remove(&self, id: &str) -> Result<()>;
     async fn stats(&self, id: &str) -> Result<ContainerStats>;
-    // ... all operations sandbox.rs currently calls on Docker
 }
 ```
+
+The `CreateConfig` mirrors the fields from `validate_sandbox_config()` in auth.rs
+and `SandboxConfig` in types.rs. Implementations use these fields as follows:
+- **Docker**: `config.name` → container name, `config.entrypoint` → Cmd,
+  `config.env` → Env, `config.labels` → Labels, `config.hostname` → Hostname
+- **Firecracker**: `config.name` → VM identifier, `config.memory_mb` → mem_size_mib,
+  `config.env` → passed via init agent, `config.entrypoint` → init command
 
 ### Docker Runtime (current)
 

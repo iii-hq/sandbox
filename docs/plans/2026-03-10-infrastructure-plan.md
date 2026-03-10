@@ -4,12 +4,15 @@
 
 Build the Rust worker as a minimal container.
 
+The Dockerfile lives at `packages/worker/Dockerfile` and is built with
+context set to `./packages/worker` (both by Compose and CI).
+
 ```dockerfile
 # Build stage
 FROM rust:1.82-alpine AS builder
 RUN apk add --no-cache musl-dev
 WORKDIR /build
-COPY packages/worker/ .
+COPY . .
 RUN cargo build --release
 
 # Runtime stage
@@ -21,6 +24,8 @@ ENTRYPOINT ["iii-sandbox-worker"]
 ```
 
 Key decisions:
+- Build context is `./packages/worker` — `COPY . .` copies Cargo.toml + src/ into /build
+- Compose (`build: ./packages/worker`) and CI (`context: ./packages/worker`, `file: Dockerfile`) use the same context
 - Alpine for smallest image (~20MB runtime)
 - `docker-cli` needed since worker talks to Docker daemon via bollard (socket mount)
 - No Docker-in-Docker; mount host socket: `-v /var/run/docker.sock:/var/run/docker.sock`
@@ -100,7 +105,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./packages/worker
           file: packages/worker/Dockerfile
           push: true
           tags: ghcr.io/iii-hq/sandbox-worker:${{ github.ref_name }}

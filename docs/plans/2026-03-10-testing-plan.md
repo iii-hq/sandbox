@@ -15,7 +15,7 @@ Add `#[cfg(test)]` modules to every worker source file.
 
 | File | Tests Needed |
 |------|-------------|
-| `auth.rs` | Valid token, invalid token, empty token, timing-safe comparison |
+| `auth.rs` | Already has 13 tests — no additions needed |
 | `config.rs` | Default values, env overrides, validation |
 | `docker.rs` | Container name formatting, stats parsing, image name validation |
 | `types.rs` | Serialization round-trips for all types |
@@ -24,30 +24,37 @@ Add `#[cfg(test)]` modules to every worker source file.
 
 ### Example: auth.rs tests
 
+auth.rs already has comprehensive tests (13 tests covering all branches).
+The actual `check_auth()` takes `(&Value, &EngineConfig)` — config is passed
+as a parameter, not read from env vars, so tests are already safe for parallel
+execution. The existing pattern:
+
 ```rust
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn valid_token_passes() {
-        std::env::set_var("III_SANDBOX_TOKEN", "test-token-123");
-        assert!(check_auth("test-token-123").is_ok());
+    fn config_with_token(token: &str) -> EngineConfig {
+        EngineConfig { auth_token: Some(token.to_string()), ..defaults() }
     }
 
     #[test]
-    fn invalid_token_fails() {
-        std::env::set_var("III_SANDBOX_TOKEN", "correct-token");
-        assert!(check_auth("wrong-token").is_err());
+    fn check_auth_valid_bearer_token() {
+        let req = json!({"headers": {"authorization": "Bearer secret123"}});
+        assert!(check_auth(&req, &config_with_token("secret123")).is_none());
     }
 
     #[test]
-    fn empty_token_fails() {
-        std::env::set_var("III_SANDBOX_TOKEN", "some-token");
-        assert!(check_auth("").is_err());
+    fn check_auth_invalid_token_returns_403() {
+        let req = json!({"headers": {"authorization": "Bearer wrong"}});
+        let resp = check_auth(&req, &config_with_token("secret123")).unwrap();
+        assert_eq!(resp["status_code"], 403);
     }
 }
 ```
+
+This pattern (explicit config parameter, no process-wide state mutation)
+should be followed for all new test modules.
 
 ### Run
 
@@ -140,7 +147,7 @@ Each runner executes the same operations and asserts the same results.
 
 | File | Action |
 |------|--------|
-| `packages/worker/src/auth.rs` | MODIFY — add #[cfg(test)] |
+| `packages/worker/src/auth.rs` | DONE — already has 13 tests |
 | `packages/worker/src/config.rs` | MODIFY — add #[cfg(test)] |
 | `packages/worker/src/docker.rs` | MODIFY — add #[cfg(test)] |
 | `packages/worker/src/types.rs` | MODIFY — add #[cfg(test)] |
