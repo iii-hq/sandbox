@@ -8,4 +8,12 @@ pub fn register(iii: &Arc<III>, config: &EngineConfig) {
     let _ = iii.register_trigger("cron", "lifecycle::ttl-sweep", json!({
         "expression": config.ttl_sweep_interval,
     }));
+
+    let _ = iii.register_trigger("cron", "worker::heartbeat", json!({
+        "expression": "*/10 * * * * *",
+    }));
+
+    let _ = iii.register_trigger("cron", "worker::reap", json!({
+        "expression": "*/60 * * * * *",
+    }));
 }

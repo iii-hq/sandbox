@@ -55,6 +55,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                 config: cloned_config,
                 metadata: source.metadata.clone(),
                 entrypoint: source.entrypoint.clone(),
+                worker_id: Some(cfg.worker_name.clone()),
             };
 
             kv.set(scopes::SANDBOXES, &new_id, &clone).await

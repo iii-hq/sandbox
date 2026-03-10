@@ -90,6 +90,7 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                     config: full_config,
                     metadata: sandbox_cfg.metadata.clone().unwrap_or_default(),
                     entrypoint: sandbox_cfg.entrypoint.clone(),
+                    worker_id: Some(cfg.worker_name.clone()),
                 };
 
                 kv.set(scopes::SANDBOXES, &id, &sandbox).await

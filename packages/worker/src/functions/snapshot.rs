@@ -13,7 +13,7 @@ use crate::types::{Sandbox, Snapshot};
 
 fn now_ms() -> u64 { SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64 }
 
-pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &EngineConfig) {
+pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
     // snapshot::create
     {
         let kv = kv.clone(); let dk = dk.clone();
@@ -124,6 +124,49 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, _config: &Engine
                 kv.delete(scopes::SNAPSHOTS, snapshot_id).await
                     .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
                 Ok(json!({ "deleted": snapshot_id }))
+            }
+        });
+    }
+
+    // snapshot::clone
+    {
+        let kv = kv.clone(); let dk = dk.clone(); let cfg = config.clone();
+        iii.register_function_with_description("snapshot::clone", "Create a new sandbox from an existing snapshot", move |input: Value| {
+            let kv = kv.clone(); let dk = dk.clone(); let cfg = cfg.clone();
+            async move {
+                let snapshot_id = input.get("snapshotId").and_then(|v| v.as_str())
+                    .ok_or_else(|| iii_sdk::IIIError::Handler("snapshotId is required".into()))?;
+                let name = input.get("name").and_then(|v| v.as_str());
+
+                let snapshot: Snapshot = kv.get(scopes::SNAPSHOTS, snapshot_id).await
+                    .ok_or_else(|| iii_sdk::IIIError::Handler(format!("Snapshot not found: {snapshot_id}")))?;
+                let source: Sandbox = kv.get(scopes::SANDBOXES, &snapshot.sandbox_id).await
+                    .ok_or_else(|| iii_sdk::IIIError::Handler(format!("Source sandbox not found: {}", snapshot.sandbox_id)))?;
+
+                let new_id = generate_id("sbx");
+                let mut cloned_config = source.config.clone();
+                cloned_config.image = snapshot.image_id.clone();
+                create_container(&dk, &new_id, &cloned_config, source.entrypoint.as_deref()).await
+                    .map_err(iii_sdk::IIIError::Handler)?;
+
+                let now = now_ms();
+                let timeout = source.config.timeout.unwrap_or(cfg.default_timeout);
+                let sandbox = Sandbox {
+                    id: new_id.clone(),
+                    name: name.unwrap_or(&new_id).to_string(),
+                    image: snapshot.image_id.clone(),
+                    status: "running".to_string(),
+                    created_at: now,
+                    expires_at: now + timeout * 1000,
+                    config: cloned_config,
+                    metadata: source.metadata.clone(),
+                    entrypoint: source.entrypoint.clone(),
+                    worker_id: Some(cfg.worker_name.clone()),
+                };
+
+                kv.set(scopes::SANDBOXES, &new_id, &sandbox).await
+                    .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
+                serde_json::to_value(&sandbox).map_err(|e| iii_sdk::IIIError::Serde(e.to_string()))
             }
         });
     }

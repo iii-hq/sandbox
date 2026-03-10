@@ -21,6 +21,7 @@ pub mod interpreter;
 pub mod warmpool;
 pub mod terminal;
 pub mod proxy;
+pub mod worker;
 
 use bollard::Docker;
 use iii_sdk::III;
@@ -53,4 +54,6 @@ pub fn register_all(iii: &Arc<III>, docker: &Arc<Docker>, kv: &StateKV, config: 
     warmpool::register(iii, docker, kv, config);
     terminal::register(iii, docker, kv, config);
     proxy::register(iii, docker, kv, config);
+    worker::register(iii, docker, kv, config);
+    worker::register_scoped(iii, docker, kv, config);
 }

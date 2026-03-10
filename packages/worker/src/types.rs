@@ -38,6 +38,8 @@ pub struct Sandbox {
     pub metadata: HashMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub entrypoint: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -314,6 +316,7 @@ mod tests {
             config: sample_sandbox_config(),
             metadata: HashMap::new(),
             entrypoint: None,
+            worker_id: None,
         }
     }
 
@@ -836,5 +839,30 @@ mod tests {
         assert_eq!(json["totalRequests"], 150);
         assert_eq!(json["p95Duration"], 120.0);
         assert_eq!(json["functionCounts"]["exec"], 100);
+    }
+
+    #[test]
+    fn sandbox_deserializes_without_worker_id() {
+        let data = json!({
+            "id": "sbx_1",
+            "name": "my-sbx",
+            "image": "node:20",
+            "status": "running",
+            "createdAt": 1000,
+            "expiresAt": 2000,
+            "config": { "image": "node:20" },
+            "metadata": {}
+        });
+        let sbx: Sandbox = serde_json::from_value(data).unwrap();
+        assert_eq!(sbx.id, "sbx_1");
+        assert!(sbx.worker_id.is_none());
+    }
+
+    #[test]
+    fn sandbox_serializes_with_worker_id() {
+        let mut sbx = sample_sandbox();
+        sbx.worker_id = Some("w1".into());
+        let json = serde_json::to_value(&sbx).unwrap();
+        assert_eq!(json["workerId"], "w1");
     }
 }
