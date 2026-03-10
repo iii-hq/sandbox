@@ -107,6 +107,13 @@ pub fn register(iii: &Arc<III>, config: &EngineConfig, limiter: &Arc<RateLimiter
         ("volume::attach", "POST", "/volumes/:volumeId/attach", true),
         ("volume::detach", "POST", "/volumes/:volumeId/detach", true),
 
+        ("terminal::create", "POST", "/sandboxes/:id/terminal", true),
+        ("terminal::resize", "POST", "/sandboxes/:id/terminal/:sessionId/resize", true),
+        ("terminal::close", "DELETE", "/sandboxes/:id/terminal/:sessionId", true),
+
+        ("proxy::request", "POST", "/proxy/:id/:port", true),
+        ("proxy::config", "POST", "/sandboxes/:id/proxy/config", true),
+
         ("lifecycle::health", "GET", "/health", false),
         ("lifecycle::ttl-sweep", "POST", "/admin/sweep", true),
     ];
@@ -276,13 +283,18 @@ mod tests {
         ("volume::delete", "DELETE", "/volumes/:volumeId", true),
         ("volume::attach", "POST", "/volumes/:volumeId/attach", true),
         ("volume::detach", "POST", "/volumes/:volumeId/detach", true),
+        ("terminal::create", "POST", "/sandboxes/:id/terminal", true),
+        ("terminal::resize", "POST", "/sandboxes/:id/terminal/:sessionId/resize", true),
+        ("terminal::close", "DELETE", "/sandboxes/:id/terminal/:sessionId", true),
+        ("proxy::request", "POST", "/proxy/:id/:port", true),
+        ("proxy::config", "POST", "/sandboxes/:id/proxy/config", true),
         ("lifecycle::health", "GET", "/health", false),
         ("lifecycle::ttl-sweep", "POST", "/admin/sweep", true),
     ];
 
     #[test]
     fn routes_count() {
-        assert_eq!(ROUTES.len(), 82);
+        assert_eq!(ROUTES.len(), 87);
     }
 
     #[test]
@@ -380,6 +392,42 @@ mod tests {
             .filter(|(id, _, _, _)| id.starts_with("volume::"))
             .collect();
         assert_eq!(volume_routes.len(), 5);
+    }
+
+    #[test]
+    fn terminal_routes_exist() {
+        let terminal_routes: Vec<_> = ROUTES.iter()
+            .filter(|(id, _, _, _)| id.starts_with("terminal::"))
+            .collect();
+        assert_eq!(terminal_routes.len(), 3);
+    }
+
+    #[test]
+    fn proxy_routes_exist() {
+        let proxy_routes: Vec<_> = ROUTES.iter()
+            .filter(|(id, _, _, _)| id.starts_with("proxy::"))
+            .collect();
+        assert_eq!(proxy_routes.len(), 2);
+    }
+
+    #[test]
+    fn terminal_create_requires_auth() {
+        let route = ROUTES.iter().find(|(id, _, _, _)| *id == "terminal::create");
+        assert!(route.is_some());
+        assert!(route.unwrap().3);
+    }
+
+    #[test]
+    fn proxy_request_requires_auth() {
+        let route = ROUTES.iter().find(|(id, _, _, _)| *id == "proxy::request");
+        assert!(route.is_some());
+        assert!(route.unwrap().3);
+    }
+
+    #[test]
+    fn terminal_close_uses_delete() {
+        let route = ROUTES.iter().find(|(id, _, _, _)| *id == "terminal::close");
+        assert_eq!(route.unwrap().1, "DELETE");
     }
 
     #[test]

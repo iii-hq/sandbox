@@ -15,6 +15,7 @@ import { PortManager } from "./port.js";
 import { QueueManager } from "./queue.js";
 import { StreamManager } from "./stream-manager.js";
 import { MonitorManager } from "./monitor.js";
+import { TerminalManager } from "./terminal.js";
 import { parseExecStream } from "./stream.js";
 
 export class Sandbox {
@@ -27,6 +28,7 @@ export class Sandbox {
   readonly queue: QueueManager;
   readonly streams: StreamManager;
   readonly monitor: MonitorManager;
+  readonly terminal: TerminalManager;
 
   constructor(
     private client: HttpClient,
@@ -41,6 +43,7 @@ export class Sandbox {
     this.queue = new QueueManager(client, info.id);
     this.streams = new StreamManager(client, info.id);
     this.monitor = new MonitorManager(client, info.id);
+    this.terminal = new TerminalManager(client, info.id);
   }
 
   get id(): string {

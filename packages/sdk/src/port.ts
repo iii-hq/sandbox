@@ -35,4 +35,8 @@ export class PortManager {
       `/sandbox/sandboxes/${this.sandboxId}/ports?containerPort=${containerPort}`,
     );
   }
+
+  getProxyUrl(containerPort: number): string {
+    return `${this.client.getBaseUrl()}/sandbox/proxy/${this.sandboxId}/${containerPort}`;
+  }
 }
