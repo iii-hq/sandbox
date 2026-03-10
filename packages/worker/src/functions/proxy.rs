@@ -33,7 +33,10 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                         .ok_or_else(|| iii_sdk::IIIError::Handler("id is required".into()))?;
                     let raw_port = input
                         .get("port")
-                        .and_then(|v| v.as_u64())
+                        .and_then(|v| {
+                            v.as_u64()
+                                .or_else(|| v.as_str().and_then(|s| s.parse::<u64>().ok()))
+                        })
                         .ok_or_else(|| iii_sdk::IIIError::Handler("port is required".into()))?;
                     let port = u16::try_from(raw_port).map_err(|_| {
                         iii_sdk::IIIError::Handler(format!(
