@@ -24,13 +24,21 @@ Secure, isolated Docker sandboxes for code execution. Built on [iii-engine](http
   ┌─────────────────────────────────────────┐
   │        Worker  (iii-sdk, Rust)          │
   │                                         │
-  │  97 Functions · 91 Endpoints · 39 Tools │
+  │ 107 Functions · 93 Endpoints · 39 Tools │
   │  sandbox · exec · fs · git · env · proc │
   │  snapshot · template · port · queue     │
   │  event · stream · monitor · volume · net│
-  │  terminal · proxy · warmpool            │
+  │  terminal · proxy · warmpool · worker   │
   └────────────────┬────────────────────────┘
                    ▼
+  ┌─────────────────────────────────────────┐
+  │      SandboxRuntime (trait)             │
+  │  ┌────────────────┐ ┌───────────────┐   │
+  │  │ DockerRuntime  │ │ Firecracker*  │   │
+  │  │ (bollard)      │ │ (stub)        │   │
+  │  └────────┬───────┘ └───────────────┘   │
+  └───────────┼─────────────────────────────┘
+              ▼
   ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
   │ sbx_01 │ │ sbx_02 │ │ sbx_03 │ │ sbx_04 │
   │ python │ │  node  │ │ golang │ │  bash  │
@@ -73,7 +81,7 @@ pnpm build
 
 | Package | Description | Entry |
 |---------|-------------|-------|
-| `iii-sandbox-worker` | Rust binary — 97 functions, 100 triggers, Docker integration | `packages/worker` |
+| `iii-sandbox-worker` | Rust binary — 107 functions, 104 triggers, pluggable runtime | `packages/worker` |
 | `@iii-sandbox/sdk` | Zero-dependency client library for Node.js | `packages/sdk` |
 | `iii-sandbox` (Python) | Async Python client (httpx + pydantic) | `packages/sdk-python` |
 | `iii-sandbox` (Rust) | Async Rust client (reqwest + serde) | `packages/sdk-rust` |
@@ -417,6 +425,7 @@ Connect any AI agent (Claude, Cursor, etc.) to sandboxes via Model Context Proto
 | `POST` | `/sandbox/sandboxes/:id/snapshots` | Create snapshot |
 | `GET` | `/sandbox/sandboxes/:id/snapshots` | List snapshots |
 | `POST` | `/sandbox/sandboxes/:id/snapshots/restore` | Restore from snapshot |
+| `POST` | `/sandbox/snapshots/:snapshotId/clone` | Clone sandbox from snapshot |
 | `DELETE` | `/sandbox/snapshots/:snapshotId` | Delete snapshot |
 
 ### Templates
@@ -519,15 +528,19 @@ Connect any AI agent (Claude, Cursor, etc.) to sandboxes via Model Context Proto
 | `POST` | `/sandbox/volumes/:volumeId/attach` | Attach to sandbox |
 | `POST` | `/sandbox/volumes/:volumeId/detach` | Detach from sandbox |
 
-### Admin
+### Worker Admin
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| `GET` | `/sandbox/workers` | List all workers (alive/dead counts) |
+| `POST` | `/sandbox/workers/select` | Select least-loaded worker |
+| `POST` | `/sandbox/workers/reap` | Clean up dead workers |
+| `POST` | `/sandbox/workers/migrate` | Backfill worker ownership |
 | `POST` | `/sandbox/admin/sweep` | Trigger TTL sweep |
 
 ## Worker Architecture
 
-The worker registers **97 iii-engine functions** across 23 modules. Compiles to a **6.6 MB release binary** using bollard for Docker integration:
+The worker registers **107 iii-engine functions** across 24 modules. Compiles to a **6.6 MB release binary** with a pluggable `SandboxRuntime` trait (Docker default, Firecracker stub):
 
 ```
 functions/
@@ -541,7 +554,7 @@ functions/
 ├── git.rs           9 functions   Clone, status, commit, diff, log, branch, checkout, push, pull
 ├── process.rs       3 functions   Process list, kill, top
 ├── template.rs      4 functions   Template CRUD
-├── snapshot.rs      4 functions   Create, restore, list, delete snapshots
+├── snapshot.rs      6 functions   Create, restore, list, delete, get-owner, clone
 ├── port.rs          3 functions   Port expose, list, unexpose
 ├── clone.rs         1 function    Clone sandbox with state
 ├── event.rs         4 functions   Event publish, subscribe, history, stream
@@ -553,13 +566,14 @@ functions/
 ├── volume.rs        5 functions   Persistent volume management
 ├── terminal.rs      3 functions   Interactive PTY sessions via iii channels
 ├── proxy.rs         2 functions   HTTP proxy with exec-based fallback
-└── warmpool.rs      4 functions   Pre-warmed container pool management
+├── warmpool.rs      4 functions   Pre-warmed container pool management
+└── worker.rs        6 functions   Multi-worker scaling, routing, reaper
 ```
 
-**3 trigger types**:
-- **HTTP** — 91 REST endpoints on port 3111
-- **Cron** — TTL sweep every 30 seconds (expires idle sandboxes)
-- **Queue** — 8 queue triggers for `sandbox.created`, `sandbox.killed`, `sandbox.expired` and other events
+**3 trigger types** (104 total):
+- **HTTP** — 93 REST endpoints on port 3111
+- **Cron** — TTL sweep (30s), worker heartbeat (10s), dead worker reaper (60s)
+- **Queue** — 8 event subscribers for `sandbox.created`, `sandbox.killed`, `sandbox.expired` and more
 
 **State** is managed through iii-engine's built-in KV store (file-backed by default):
 - `sandbox` — sandbox metadata and config
@@ -576,6 +590,7 @@ functions/
 - `metrics` — aggregated metrics
 - `terminal` — interactive terminal sessions
 - `pool` — warm pool container tracking
+- `workers` — multi-worker registration and liveness
 
 ## Security
 
@@ -590,12 +605,49 @@ Input validation:
 - **Path traversal prevention** — all file paths are normalized and checked against the workspace root
 - **Image whitelist** — configurable allowed image patterns (`III_ALLOWED_IMAGES`)
 - **Command wrapping** — all commands execute inside `sh -c` with no host access
+- **Env key validation** — environment variable keys must match `[A-Za-z_][A-Za-z0-9_]*` (prevents command injection)
 - **Auth** — optional Bearer token authentication (`III_AUTH_TOKEN`)
 - **Shell injection prevention** — args quoted and sanitized for git, chmod, and search operations
 - **Terminal shell allowlist** — only `/bin/sh`, `/bin/bash`, `/bin/zsh`, `/bin/ash` allowed
 - **Proxy injection prevention** — exec-based proxy uses argv (no shell), `--data-raw`, `--globoff`
 - **Output capping** — stdout/stderr limited to prevent memory exhaustion
 - **Rate limiting** — per-token request limits (configurable via `III_RATE_LIMIT_ENABLED`)
+
+## Multi-Worker Scaling
+
+Multiple worker instances can run concurrently, each managing its own set of sandboxes. The engine handles automatic load balancing and fault tolerance:
+
+```
+  Worker A (us-east)          Worker B (eu-west)
+  ┌──────────────────┐        ┌──────────────────┐
+  │ sbx_01, sbx_02   │        │ sbx_03, sbx_04   │
+  │ heartbeat: 10s   │        │ heartbeat: 10s   │
+  └────────┬─────────┘        └────────┬─────────┘
+           └──────────┬───────────────┘
+                      ▼
+           ┌────────────────────┐
+           │    iii-engine KV   │
+           │  workers scope     │
+           │  sandbox routing   │
+           └────────────────────┘
+```
+
+- **Heartbeat**: Each worker reports liveness every 10 seconds
+- **Selection**: `worker::select` picks the least-loaded worker for new sandboxes
+- **Routing**: Sandbox-scoped API calls are automatically forwarded to the owning worker
+- **Reaper**: Dead workers (no heartbeat for 30s) are cleaned up, orphaned sandboxes reassigned
+- **Ownership**: Each sandbox tracks its `worker_id` for cross-worker routing
+
+## Pluggable Runtime
+
+The `SandboxRuntime` trait (29 methods) abstracts the container backend, allowing different isolation technologies:
+
+| Backend | Status | Crate | Feature Flag |
+|---------|--------|-------|--------------|
+| Docker | Production | `bollard` | default |
+| Firecracker | Stub | — | `firecracker` |
+
+The runtime is selected via `III_ISOLATION_BACKEND` environment variable. The trait covers sandbox lifecycle, exec, filesystem, networking, volumes, and snapshotting.
 
 ## Supported Languages
 
@@ -634,7 +686,7 @@ modules:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `III_ENGINE_URL` | `ws://localhost:49134` | iii-engine WebSocket |
-| `III_WORKER_NAME` | `iii-sandbox` | Worker name |
+| `III_WORKER_NAME` | `iii-sandbox-{host}-{uuid}` | Worker name (auto-generated if unset) |
 | `III_REST_PORT` | `3111` | REST API port |
 | `III_API_PREFIX` | `sandbox` | API path prefix |
 | `III_AUTH_TOKEN` | — | Bearer auth token |
@@ -646,6 +698,7 @@ modules:
 | `III_WORKSPACE_DIR` | `/workspace` | Container working directory |
 | `III_MAX_CMD_TIMEOUT` | `300` | Max command timeout (seconds) |
 | `III_POOL_SIZE` | `0` | Warm pool size (pre-warmed containers) |
+| `III_ISOLATION_BACKEND` | `docker` | Isolation backend (`docker` or `firecracker`) |
 | `III_RATE_LIMIT_ENABLED` | `false` | Enable per-token rate limiting |
 
 ## Repository Layout
@@ -653,17 +706,18 @@ modules:
 ```
 iii-sandbox/
 ├── packages/
-│   ├── worker/           Rust worker binary (84 functions, 6.6 MB release)
+│   ├── worker/           Rust worker binary (107 functions, 6.6 MB release)
 │   │   ├── Cargo.toml
 │   │   └── src/
-│   │       ├── main.rs       Entry point: init + register all
+│   │       ├── main.rs       Entry point: init + runtime selection
 │   │       ├── config.rs     EngineConfig from env vars
 │   │       ├── docker.rs     bollard wrapper (containers, exec, stats)
 │   │       ├── state.rs      KV wrapper over trigger("state::*")
 │   │       ├── auth.rs       Token validation + path/command security
 │   │       ├── types.rs      All domain types (Sandbox, ExecResult, etc.)
-│   │       ├── functions/    23 modules — 97 registered functions
-│   │       ├── triggers/     HTTP (91), cron (1), queue (8) triggers
+│   │       ├── functions/    24 modules — 107 registered functions
+│   │       ├── triggers/     HTTP (93), cron (3), queue (8) triggers
+│   │       ├── runtime/      SandboxRuntime trait + Docker/Firecracker impls
 │   │       └── lifecycle/    TTL sweep, health check, graceful shutdown
 │   ├── sdk/              TypeScript client library (zero-dep)
 │   │   └── src/              18 modules (client, sandbox, 16 managers)
@@ -694,21 +748,25 @@ cd packages/worker && cargo run   # Start Rust engine
 pnpm test             # Run TypeScript SDK/CLI/MCP tests (~293)
 pnpm lint             # TypeScript type checking
 
-cd packages/worker && cargo test                          # Rust engine tests (296)
+cd packages/worker && cargo test                          # Rust engine tests (333)
 cd packages/sdk-python && pip install -e ".[dev]" && pytest    # Python SDK tests (150)
 cd packages/sdk-rust && cargo test                             # Rust SDK tests (32)
+
+cd test/cross-sdk && python run-python.py                      # Cross-SDK integration tests
+cd test/cross-sdk && npx tsx run-ts.ts                         # (requires running engine)
+cd test/cross-sdk && cargo run                                 # Rust cross-SDK runner
 ```
 
 ### Test Suite
 
-**~771 total tests** across TypeScript, Python, and Rust:
+**~808 total tests** across TypeScript, Python, and Rust:
 
 | Language | Files | Tests | Tool |
 |----------|-------|-------|------|
 | TypeScript (SDK/CLI/MCP) | 33 | ~293 | vitest |
 | Python SDK | 13 | 150 | pytest + respx |
 | Rust SDK | 11 | 32 | cargo test + mockito |
-| Rust engine | 8 modules | 205 | cargo test |
+| Rust engine | 24 modules | 333 | cargo test |
 
 ## License
 
