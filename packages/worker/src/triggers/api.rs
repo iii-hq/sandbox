@@ -129,17 +129,18 @@ pub fn register(iii: &Arc<III>, config: &EngineConfig, limiter: &Arc<RateLimiter
                     if let Some(auth_err) = check_auth(&req, &cfg) {
                         return Ok(auth_err);
                     }
-                }
 
-                let token = req.get("headers")
-                    .and_then(|h| h.get("authorization"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("anonymous");
-                if !lim.check_token(token) {
-                    return Ok(json!({
-                        "status_code": 429,
-                        "body": { "error": "Rate limit exceeded" }
-                    }));
+                    let raw_token = req.get("headers")
+                        .and_then(|h| h.get("authorization"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let normalized = raw_token.strip_prefix("Bearer ").unwrap_or(raw_token);
+                    if !normalized.is_empty() && !lim.check_token(normalized) {
+                        return Ok(json!({
+                            "status_code": 429,
+                            "body": { "error": "Rate limit exceeded" }
+                        }));
+                    }
                 }
 
                 let mut merged = serde_json::Map::new();

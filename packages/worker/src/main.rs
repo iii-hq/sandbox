@@ -55,6 +55,15 @@ async fn main() {
         info!(pool_size = config.warm_pool_size, "Warm pool enabled");
     }
 
+    let cleanup_limiter = limiter.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+        loop {
+            interval.tick().await;
+            cleanup_limiter.cleanup_stale();
+        }
+    });
+
     functions::register_all(&iii, &dk, &kv, &config);
     lifecycle::register_all(&iii, &dk, &kv, &config);
     triggers::register_all(&iii, &dk, &kv, &config, &limiter);

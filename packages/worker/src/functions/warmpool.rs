@@ -2,6 +2,7 @@ use bollard::Docker;
 use iii_sdk::III;
 use serde_json::{json, Value};
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use crate::config::EngineConfig;
 use crate::docker;
@@ -9,15 +10,21 @@ use crate::state::{scopes, StateKV};
 use crate::types::SandboxConfig;
 
 pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineConfig) {
+    let acquire_lock = Arc::new(Mutex::new(()));
+
     // warmpool::acquire — try to pop a pre-warmed container matching the profile
     {
         let kv = kv.clone();
         let dk = dk.clone();
+        let lock = acquire_lock.clone();
         iii.register_function_with_description("warmpool::acquire", "Acquire a pre-warmed container from the pool", move |input: Value| {
             let kv = kv.clone();
             let dk = dk.clone();
+            let lock = lock.clone();
             async move {
                 let profile_key = build_profile_key(&input);
+
+                let _guard = lock.lock().await;
 
                 let pool: Vec<PoolEntry> = kv.list(scopes::POOL).await;
                 let candidate = pool.iter().find(|e| e.profile_key == profile_key && e.status == "ready");
@@ -29,6 +36,8 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
 
                         kv.delete(scopes::POOL, &entry_id).await
                             .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;
+
+                        drop(_guard);
 
                         let inspect = dk.inspect_container(&container_id, None).await;
                         if inspect.is_err() {
@@ -80,8 +89,15 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                                     profile_key: key.clone(),
                                     status: "ready".to_string(),
                                 };
-                                let _ = kv.set(scopes::POOL, &pool_id, &entry).await;
-                                created += 1;
+                                if let Err(e) = kv.set(scopes::POOL, &pool_id, &entry).await {
+                                    tracing::warn!(error = %e, container = %container_name, "KV write failed, removing orphan container");
+                                    let _ = dk.remove_container(
+                                        &container_name,
+                                        Some(bollard::container::RemoveContainerOptions { force: true, ..Default::default() }),
+                                    ).await;
+                                } else {
+                                    created += 1;
+                                }
                             }
                             Err(e) => {
                                 tracing::warn!(error = %e, profile = %key, "Failed to create pool container");
@@ -165,14 +181,14 @@ fn build_profile_key(input: &Value) -> String {
     let image = input.get("image").and_then(|v| v.as_str()).unwrap_or("python:3.12-slim");
     let memory = input.get("memory").and_then(|v| v.as_u64()).unwrap_or(512);
     let cpu = input.get("cpu").and_then(|v| v.as_f64()).unwrap_or(1.0);
-    let network = input.get("network").and_then(|v| v.as_bool()).unwrap_or(true);
+    let network = input.get("network").and_then(|v| v.as_bool()).unwrap_or(false);
     format!("{image}:{memory}:{cpu}:{network}")
 }
 
 fn profile_key_from_config(config: &SandboxConfig) -> String {
     let memory = config.memory.unwrap_or(512);
     let cpu = config.cpu.unwrap_or(1.0);
-    let network = config.network.unwrap_or(true);
+    let network = config.network.unwrap_or(false);
     format!("{}:{memory}:{cpu}:{network}", config.image)
 }
 
@@ -207,7 +223,7 @@ mod tests {
     #[test]
     fn profile_key_defaults() {
         let input = json!({});
-        assert_eq!(build_profile_key(&input), "python:3.12-slim:512:1:true");
+        assert_eq!(build_profile_key(&input), "python:3.12-slim:512:1:false");
     }
 
     #[test]
@@ -247,6 +263,6 @@ mod tests {
             metadata: None,
             entrypoint: None,
         };
-        assert_eq!(profile_key_from_config(&cfg), "alpine:latest:512:1:true");
+        assert_eq!(profile_key_from_config(&cfg), "alpine:latest:512:1:false");
     }
 }
