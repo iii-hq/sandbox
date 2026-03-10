@@ -171,6 +171,15 @@ pub async fn exec_in_container(
         .await;
 
         if result.is_err() {
+            if let Ok(info) = docker.inspect_exec(&exec_id).await {
+                if info.running.unwrap_or(false) {
+                    tracing::warn!(
+                        exec_id = %exec_id,
+                        container = container_name,
+                        "Timed-out exec still running in container"
+                    );
+                }
+            }
             return Err(format!("Command timed out after {timeout_ms}ms"));
         }
     }

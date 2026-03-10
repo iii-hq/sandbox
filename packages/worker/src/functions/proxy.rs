@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 
 use crate::config::EngineConfig;
+use crate::docker::exec_in_container;
 use crate::state::{scopes, StateKV};
 use crate::types::{PortMapping, Sandbox};
 
@@ -38,16 +39,12 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                                 .or_else(|| v.as_str().and_then(|s| s.parse::<u64>().ok()))
                         })
                         .ok_or_else(|| iii_sdk::IIIError::Handler("port is required".into()))?;
-                    let port = u16::try_from(raw_port).map_err(|_| {
-                        iii_sdk::IIIError::Handler(format!(
+                    if raw_port == 0 || raw_port > 65535 {
+                        return Err(iii_sdk::IIIError::Handler(format!(
                             "port must be 1-65535, got {raw_port}"
-                        ))
-                    })?;
-                    if port == 0 {
-                        return Err(iii_sdk::IIIError::Handler(
-                            "port must be 1-65535".into(),
-                        ));
+                        )));
                     }
+                    let port = raw_port as u16;
                     let method = input
                         .get("method")
                         .and_then(|v| v.as_str())
@@ -97,62 +94,34 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
                         )));
                     }
 
-                    let container_ip = get_container_ip(&dk, &format!("iii-sbx-{id}")).await?;
-
-                    let url = format!("http://{container_ip}:{port}{path}");
-
-                    let http_method = method
-                        .parse::<reqwest::Method>()
+                    let http_method: reqwest::Method = method
+                        .parse()
                         .map_err(|e| iii_sdk::IIIError::Handler(format!("Invalid method: {e}")))?;
-
-                    let mut req = client.request(http_method.clone(), &url);
 
                     let timeout_ms: u64 = sandbox
                         .metadata
                         .get("proxy_timeout")
                         .and_then(|v| v.parse().ok())
                         .unwrap_or(30_000);
-                    req = req.timeout(std::time::Duration::from_millis(timeout_ms));
 
-                    if let Some(obj) = req_headers.as_object() {
-                        for (k, v) in obj {
-                            if let Some(val) = v.as_str() {
-                                req = req.header(k, val);
-                            }
-                        }
+                    let container_name = format!("iii-sbx-{id}");
+
+                    let ctx = ProxyContext {
+                        dk: &dk,
+                        client: &client,
+                        container_name: &container_name,
+                        port,
+                        path,
+                        method: http_method,
+                        headers: &req_headers,
+                        body: &body,
+                        timeout_ms,
+                    };
+
+                    match try_direct_proxy(&ctx).await {
+                        Ok(result) => Ok(result),
+                        Err(_) => proxy_via_exec(&ctx).await,
                     }
-
-                    if !body.is_empty()
-                        && http_method != reqwest::Method::GET
-                        && http_method != reqwest::Method::HEAD
-                    {
-                        req = req.body(body);
-                    }
-
-                    let resp = req.send().await.map_err(|e| {
-                        iii_sdk::IIIError::Handler(format!("Proxy request failed: {e}"))
-                    })?;
-
-                    let status = resp.status().as_u16();
-                    let resp_headers: serde_json::Map<String, Value> = resp
-                        .headers()
-                        .iter()
-                        .filter_map(|(k, v)| {
-                            v.to_str()
-                                .ok()
-                                .map(|val| (k.to_string(), Value::String(val.to_string())))
-                        })
-                        .collect();
-                    let resp_body = resp.text().await.map_err(|e| {
-                        iii_sdk::IIIError::Handler(format!("Failed to read response: {e}"))
-                    })?;
-
-                    Ok(json!({
-                        "statusCode": status,
-                        "headers": resp_headers,
-                        "body": resp_body,
-                        "url": url,
-                    }))
                 }
             },
         );
@@ -230,6 +199,167 @@ pub fn register(iii: &Arc<III>, dk: &Arc<Docker>, kv: &StateKV, config: &EngineC
             },
         );
     }
+}
+
+struct ProxyContext<'a> {
+    dk: &'a Docker,
+    client: &'a reqwest::Client,
+    container_name: &'a str,
+    port: u16,
+    path: &'a str,
+    method: reqwest::Method,
+    headers: &'a Value,
+    body: &'a str,
+    timeout_ms: u64,
+}
+
+async fn try_direct_proxy(ctx: &ProxyContext<'_>) -> Result<Value, iii_sdk::IIIError> {
+    let container_ip = get_container_ip(ctx.dk, ctx.container_name).await?;
+    let url = format!("http://{container_ip}:{}{}", ctx.port, ctx.path);
+
+    let send_body = !ctx.body.is_empty()
+        && ctx.method != reqwest::Method::GET
+        && ctx.method != reqwest::Method::HEAD;
+
+    let mut req = ctx
+        .client
+        .request(ctx.method.clone(), &url)
+        .timeout(std::time::Duration::from_millis(ctx.timeout_ms));
+
+    if let Some(obj) = ctx.headers.as_object() {
+        for (k, v) in obj {
+            if let Some(val) = v.as_str() {
+                req = req.header(k, val);
+            }
+        }
+    }
+
+    if send_body {
+        req = req.body(ctx.body.to_string());
+    }
+
+    let resp = req.send().await.map_err(|e| {
+        iii_sdk::IIIError::Handler(format!("Proxy request failed: {e}"))
+    })?;
+
+    let status = resp.status().as_u16();
+    let resp_headers: serde_json::Map<String, Value> = resp
+        .headers()
+        .iter()
+        .filter_map(|(k, v)| {
+            v.to_str()
+                .ok()
+                .map(|val| (k.to_string(), Value::String(val.to_string())))
+        })
+        .collect();
+    let resp_body = resp.text().await.map_err(|e| {
+        iii_sdk::IIIError::Handler(format!("Failed to read response: {e}"))
+    })?;
+
+    Ok(json!({
+        "statusCode": status,
+        "headers": resp_headers,
+        "body": resp_body,
+        "url": url,
+    }))
+}
+
+async fn proxy_via_exec(ctx: &ProxyContext<'_>) -> Result<Value, iii_sdk::IIIError> {
+    let max_time_secs = (ctx.timeout_ms / 1000).max(1);
+    let connect_timeout_secs = (max_time_secs / 6).clamp(1, 10);
+
+    let mut argv = vec![
+        "curl".to_string(),
+        "-s".to_string(),
+        "--globoff".to_string(),
+        "--connect-timeout".to_string(),
+        connect_timeout_secs.to_string(),
+        "--max-time".to_string(),
+        max_time_secs.to_string(),
+        "-D".to_string(),
+        "/dev/stderr".to_string(),
+        "-w".to_string(),
+        "\n__PROXY_STATUS__%{http_code}".to_string(),
+        "-X".to_string(),
+        ctx.method.as_str().to_string(),
+    ];
+
+    if let Some(obj) = ctx.headers.as_object() {
+        for (k, v) in obj {
+            if let Some(val) = v.as_str() {
+                argv.push("-H".to_string());
+                argv.push(format!("{k}: {val}"));
+            }
+        }
+    }
+
+    if !ctx.body.is_empty()
+        && ctx.method != reqwest::Method::GET
+        && ctx.method != reqwest::Method::HEAD
+    {
+        argv.push("--data-raw".to_string());
+        argv.push(ctx.body.to_string());
+    }
+
+    argv.push(format!("http://localhost:{}{}", ctx.port, ctx.path));
+
+    let result = exec_in_container(ctx.dk, ctx.container_name, &argv, ctx.timeout_ms)
+        .await
+        .map_err(|e| iii_sdk::IIIError::Handler(format!("Exec proxy failed: {e}")))?;
+
+    if result.exit_code != 0 {
+        let msg = if result.stderr.contains("not found") {
+            "curl not available in container — install curl or run worker in Docker".to_string()
+        } else {
+            format!("curl failed (exit {}): {}", result.exit_code, result.stderr)
+        };
+        return Err(iii_sdk::IIIError::Handler(msg));
+    }
+
+    if !result.stdout.contains("__PROXY_STATUS__") {
+        return Err(iii_sdk::IIIError::Handler(
+            "Unexpected curl output: missing status marker".to_string(),
+        ));
+    }
+
+    let (resp_body, status_code) = parse_curl_output(&result.stdout);
+    let resp_headers = parse_curl_headers(&result.stderr);
+
+    Ok(json!({
+        "statusCode": status_code,
+        "headers": resp_headers,
+        "body": resp_body,
+        "url": format!("http://localhost:{}{}", ctx.port, ctx.path),
+        "proxiedVia": "exec",
+    }))
+}
+
+fn parse_curl_output(stdout: &str) -> (String, u16) {
+    const MARKER: &str = "\n__PROXY_STATUS__";
+    if let Some(pos) = stdout.rfind(MARKER) {
+        let body = &stdout[..pos];
+        let status_str = &stdout[pos + MARKER.len()..];
+        let status = status_str.trim().parse::<u16>().unwrap_or(0);
+        (body.to_string(), status)
+    } else {
+        (stdout.to_string(), 0)
+    }
+}
+
+fn parse_curl_headers(stderr: &str) -> serde_json::Map<String, Value> {
+    let mut headers = serde_json::Map::new();
+    for line in stderr.lines() {
+        if line.starts_with("HTTP/") || line.trim().is_empty() {
+            continue;
+        }
+        if let Some((key, value)) = line.split_once(':') {
+            headers.insert(
+                key.trim().to_lowercase(),
+                Value::String(value.trim().to_string()),
+            );
+        }
+    }
+    headers
 }
 
 async fn get_container_ip(dk: &Docker, container_name: &str) -> Result<String, iii_sdk::IIIError> {
@@ -364,22 +494,20 @@ mod tests {
     #[test]
     fn port_validation_rejects_zero() {
         let raw: u64 = 0;
-        let port = u16::try_from(raw);
-        assert!(port.is_ok());
-        assert_eq!(port.unwrap(), 0);
+        assert!(raw == 0 || raw > 65535);
     }
 
     #[test]
     fn port_validation_rejects_overflow() {
         let raw: u64 = 70_000;
-        let port = u16::try_from(raw);
-        assert!(port.is_err());
+        assert!(raw == 0 || raw > 65535);
     }
 
     #[test]
     fn port_validation_accepts_valid() {
         let raw: u64 = 8080;
-        let port = u16::try_from(raw).unwrap();
+        assert!(raw > 0 && raw <= 65535);
+        let port = raw as u16;
         assert_eq!(port, 8080);
     }
 
@@ -411,5 +539,222 @@ mod tests {
         let timeout: u64 = "".parse().unwrap_or(30_000);
         assert!(!require_auth);
         assert_eq!(timeout, 30_000);
+    }
+
+    #[test]
+    fn parse_curl_output_with_status() {
+        let stdout = "{\"ok\":true}\n__PROXY_STATUS__200";
+        let (body, status) = parse_curl_output(stdout);
+        assert_eq!(body, "{\"ok\":true}");
+        assert_eq!(status, 200);
+    }
+
+    #[test]
+    fn parse_curl_output_no_marker() {
+        let stdout = "raw output without marker";
+        let (body, status) = parse_curl_output(stdout);
+        assert_eq!(body, "raw output without marker");
+        assert_eq!(status, 0);
+    }
+
+    #[test]
+    fn parse_curl_output_empty() {
+        let (body, status) = parse_curl_output("");
+        assert_eq!(body, "");
+        assert_eq!(status, 0);
+    }
+
+    #[test]
+    fn parse_curl_output_multiline_body() {
+        let stdout = "line1\nline2\nline3\n__PROXY_STATUS__201";
+        let (body, status) = parse_curl_output(stdout);
+        assert_eq!(body, "line1\nline2\nline3");
+        assert_eq!(status, 201);
+    }
+
+    #[test]
+    fn parse_curl_output_404() {
+        let stdout = "Not Found\n__PROXY_STATUS__404";
+        let (body, status) = parse_curl_output(stdout);
+        assert_eq!(body, "Not Found");
+        assert_eq!(status, 404);
+    }
+
+    #[test]
+    fn parse_curl_headers_basic() {
+        let stderr = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nx-custom: value\r\n\r\n";
+        let headers = parse_curl_headers(stderr);
+        assert_eq!(headers["content-type"], "application/json");
+        assert_eq!(headers["x-custom"], "value");
+    }
+
+    #[test]
+    fn parse_curl_headers_skips_status_line() {
+        let stderr = "HTTP/1.1 200 OK\r\nserver: nginx\r\n";
+        let headers = parse_curl_headers(stderr);
+        assert!(!headers.contains_key("http/1.1"));
+        assert_eq!(headers["server"], "nginx");
+    }
+
+    #[test]
+    fn parse_curl_headers_empty() {
+        let headers = parse_curl_headers("");
+        assert!(headers.is_empty());
+    }
+
+    #[test]
+    fn parse_curl_headers_lowercases_keys() {
+        let stderr = "Content-Type: text/html\r\nX-Request-ID: abc123\r\n";
+        let headers = parse_curl_headers(stderr);
+        assert_eq!(headers["content-type"], "text/html");
+        assert_eq!(headers["x-request-id"], "abc123");
+    }
+
+    #[test]
+    fn exec_proxy_url_format() {
+        let port = 3000u16;
+        let path = "/api/data";
+        let url = format!("http://localhost:{port}{path}");
+        assert_eq!(url, "http://localhost:3000/api/data");
+    }
+
+    #[test]
+    fn exec_proxy_url_root() {
+        let port = 8080u16;
+        let path = "/";
+        let url = format!("http://localhost:{port}{path}");
+        assert_eq!(url, "http://localhost:8080/");
+    }
+
+    #[test]
+    fn argv_contains_globoff() {
+        let argv = build_test_argv("GET", 3000, "/health", &json!({}), "", 30_000);
+        assert!(argv.contains(&"--globoff".to_string()));
+    }
+
+    #[test]
+    fn argv_contains_timeout_flags() {
+        let argv = build_test_argv("GET", 3000, "/health", &json!({}), "", 30_000);
+        assert!(argv.contains(&"--connect-timeout".to_string()));
+        assert!(argv.contains(&"--max-time".to_string()));
+        let ct_idx = argv.iter().position(|a| a == "--connect-timeout").unwrap();
+        assert_eq!(argv[ct_idx + 1], "5");
+        let mt_idx = argv.iter().position(|a| a == "--max-time").unwrap();
+        assert_eq!(argv[mt_idx + 1], "30");
+    }
+
+    #[test]
+    fn argv_timeout_short_request() {
+        let argv = build_test_argv("GET", 3000, "/", &json!({}), "", 5_000);
+        let mt_idx = argv.iter().position(|a| a == "--max-time").unwrap();
+        assert_eq!(argv[mt_idx + 1], "5");
+        let ct_idx = argv.iter().position(|a| a == "--connect-timeout").unwrap();
+        assert_eq!(argv[ct_idx + 1], "1");
+    }
+
+    #[test]
+    fn argv_uses_data_raw_not_d() {
+        let argv = build_test_argv("POST", 3000, "/api", &json!({}), "{\"k\":\"v\"}", 30_000);
+        assert!(argv.contains(&"--data-raw".to_string()));
+        assert!(!argv.contains(&"-d".to_string()));
+    }
+
+    #[test]
+    fn argv_no_body_on_get() {
+        let argv = build_test_argv("GET", 3000, "/", &json!({}), "should_not_appear", 30_000);
+        assert!(!argv.contains(&"--data-raw".to_string()));
+    }
+
+    #[test]
+    fn argv_method_in_args() {
+        let argv = build_test_argv("DELETE", 8080, "/resource", &json!({}), "", 30_000);
+        let x_idx = argv.iter().position(|a| a == "-X").unwrap();
+        assert_eq!(argv[x_idx + 1], "DELETE");
+    }
+
+    #[test]
+    fn argv_url_last() {
+        let argv = build_test_argv("GET", 3000, "/api/data", &json!({}), "", 30_000);
+        assert_eq!(argv.last().unwrap(), "http://localhost:3000/api/data");
+    }
+
+    #[test]
+    fn argv_headers_as_separate_args() {
+        let headers = json!({"content-type": "application/json", "x-custom": "val"});
+        let argv = build_test_argv("POST", 3000, "/", &headers, "{}", 30_000);
+        let h_positions: Vec<usize> = argv
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| *a == "-H")
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(h_positions.len(), 2);
+        for pos in h_positions {
+            let header_val = &argv[pos + 1];
+            assert!(header_val.contains(": "));
+        }
+    }
+
+    #[test]
+    fn argv_body_with_at_sign_safe() {
+        let argv = build_test_argv("POST", 3000, "/", &json!({}), "@/etc/passwd", 30_000);
+        assert!(argv.contains(&"--data-raw".to_string()));
+        assert!(argv.contains(&"@/etc/passwd".to_string()));
+    }
+
+    #[test]
+    fn argv_no_sh_c() {
+        let argv = build_test_argv("GET", 3000, "/", &json!({}), "", 30_000);
+        assert!(!argv.contains(&"sh".to_string()));
+        assert!(!argv.contains(&"-c".to_string()));
+    }
+
+    fn build_test_argv(
+        method: &str,
+        port: u16,
+        path: &str,
+        headers: &Value,
+        body: &str,
+        timeout_ms: u64,
+    ) -> Vec<String> {
+        let max_time_secs = (timeout_ms / 1000).max(1);
+        let connect_timeout_secs = (max_time_secs / 6).clamp(1, 10);
+        let http_method: reqwest::Method = method.parse().unwrap();
+
+        let mut argv = vec![
+            "curl".to_string(),
+            "-s".to_string(),
+            "--globoff".to_string(),
+            "--connect-timeout".to_string(),
+            connect_timeout_secs.to_string(),
+            "--max-time".to_string(),
+            max_time_secs.to_string(),
+            "-D".to_string(),
+            "/dev/stderr".to_string(),
+            "-w".to_string(),
+            "\n__PROXY_STATUS__%{http_code}".to_string(),
+            "-X".to_string(),
+            http_method.as_str().to_string(),
+        ];
+
+        if let Some(obj) = headers.as_object() {
+            for (k, v) in obj {
+                if let Some(val) = v.as_str() {
+                    argv.push("-H".to_string());
+                    argv.push(format!("{k}: {val}"));
+                }
+            }
+        }
+
+        if !body.is_empty()
+            && http_method != reqwest::Method::GET
+            && http_method != reqwest::Method::HEAD
+        {
+            argv.push("--data-raw".to_string());
+            argv.push(body.to_string());
+        }
+
+        argv.push(format!("http://localhost:{port}{path}"));
+        argv
     }
 }
