@@ -1,0 +1,22 @@
+services:
+  iii-engine:
+    image: ghcr.io/iii-hq/iii:latest
+    ports: ["49134:49134"]
+
+  worker:
+    build: ./packages/worker
+    depends_on: [iii-engine]
+    environment:
+      III_ENGINE_URL: ws://iii-engine:49134
+      III_AUTH_TOKEN: ${III_SANDBOX_TOKEN}
+      III_MAX_SANDBOXES: 50
+      III_DEFAULT_MEMORY: 512
+      III_DEFAULT_TIMEOUT: 3600
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports: ["3111:3111"]
+    restart: unless-stopped
+
+  code-interpreter:
+    build: ./images/code-interpreter
+    profiles: ["interpreter"]

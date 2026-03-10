@@ -116,7 +116,7 @@ integration-test:
   runs-on: ubuntu-latest
   services:
     iii-engine:
-      image: ghcr.io/iii-hq/engine:latest
+      image: ghcr.io/iii-hq/iii:latest
       ports: ["49134:49134"]
   steps:
     - uses: actions/checkout@v4

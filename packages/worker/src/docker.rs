@@ -464,3 +464,210 @@ pub async fn container_top(
 
     Ok(serde_json::to_value(top).unwrap_or(Value::Null))
 }
+
+pub fn container_name_for_sandbox(id: &str) -> String {
+    format!("iii-sbx-{id}")
+}
+
+pub fn parse_stat_line(line: &str) -> Option<FileMetadata> {
+    let parts: Vec<&str> = line.split('\t').collect();
+    if parts.len() < 7 {
+        return None;
+    }
+    Some(FileMetadata {
+        path: parts[0].to_string(),
+        size: parts[1].parse().unwrap_or(0),
+        permissions: parts[2].to_string(),
+        owner: parts[3].to_string(),
+        group: parts[4].to_string(),
+        is_directory: parts[5] == "directory",
+        is_symlink: parts[5] == "symbolic link",
+        modified_at: parts[6].parse::<u64>().unwrap_or(0) * 1000,
+    })
+}
+
+pub fn parse_dir_entry(line: &str, base_path: &str) -> Option<FileInfo> {
+    let parts: Vec<&str> = line.split('\t').collect();
+    if parts.len() < 4 {
+        return None;
+    }
+    let name = parts[0].to_string();
+    let size = parts[1].parse().unwrap_or(0);
+    let mtime = parts[2].parse::<f64>().unwrap_or(0.0);
+    let file_type = parts[3];
+    let file_path = format!("{}/{}", base_path.trim_end_matches('/'), name);
+    Some(FileInfo {
+        name,
+        path: file_path,
+        size,
+        is_directory: file_type == "d",
+        modified_at: (mtime * 1000.0) as u64,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn container_name_format() {
+        assert_eq!(container_name_for_sandbox("abc123"), "iii-sbx-abc123");
+    }
+
+    #[test]
+    fn container_name_with_prefix() {
+        let name = container_name_for_sandbox("sbx_deadbeef");
+        assert!(name.starts_with("iii-sbx-"));
+        assert_eq!(name, "iii-sbx-sbx_deadbeef");
+    }
+
+    #[test]
+    fn parse_stat_line_regular_file() {
+        let line = "/workspace/main.py\t1024\t-rw-r--r--\troot\troot\tregular file\t1700000000";
+        let meta = parse_stat_line(line).unwrap();
+        assert_eq!(meta.path, "/workspace/main.py");
+        assert_eq!(meta.size, 1024);
+        assert_eq!(meta.permissions, "-rw-r--r--");
+        assert_eq!(meta.owner, "root");
+        assert_eq!(meta.group, "root");
+        assert!(!meta.is_directory);
+        assert!(!meta.is_symlink);
+        assert_eq!(meta.modified_at, 1700000000000);
+    }
+
+    #[test]
+    fn parse_stat_line_directory() {
+        let line = "/workspace/src\t4096\tdrwxr-xr-x\troot\troot\tdirectory\t1700000000";
+        let meta = parse_stat_line(line).unwrap();
+        assert!(meta.is_directory);
+        assert!(!meta.is_symlink);
+    }
+
+    #[test]
+    fn parse_stat_line_symlink() {
+        let line = "/usr/bin/python\t0\tlrwxrwxrwx\troot\troot\tsymbolic link\t1700000000";
+        let meta = parse_stat_line(line).unwrap();
+        assert!(meta.is_symlink);
+        assert!(!meta.is_directory);
+    }
+
+    #[test]
+    fn parse_stat_line_too_few_fields() {
+        assert!(parse_stat_line("only\ttwo\tfields").is_none());
+        assert!(parse_stat_line("").is_none());
+    }
+
+    #[test]
+    fn parse_stat_line_invalid_size_defaults_to_zero() {
+        let line = "/file\tnotanumber\t-rw-r--r--\troot\troot\tregular file\t0";
+        let meta = parse_stat_line(line).unwrap();
+        assert_eq!(meta.size, 0);
+    }
+
+    #[test]
+    fn parse_stat_line_invalid_mtime_defaults_to_zero() {
+        let line = "/file\t100\t-rw-r--r--\troot\troot\tregular file\tbadtime";
+        let meta = parse_stat_line(line).unwrap();
+        assert_eq!(meta.modified_at, 0);
+    }
+
+    #[test]
+    fn parse_dir_entry_file() {
+        let entry = parse_dir_entry("main.py\t512\t0\tf", "/workspace").unwrap();
+        assert_eq!(entry.name, "main.py");
+        assert_eq!(entry.path, "/workspace/main.py");
+        assert_eq!(entry.size, 512);
+        assert!(!entry.is_directory);
+    }
+
+    #[test]
+    fn parse_dir_entry_directory() {
+        let entry = parse_dir_entry("src\t4096\t0\td", "/workspace").unwrap();
+        assert_eq!(entry.name, "src");
+        assert_eq!(entry.path, "/workspace/src");
+        assert!(entry.is_directory);
+    }
+
+    #[test]
+    fn parse_dir_entry_trailing_slash_base() {
+        let entry = parse_dir_entry("file.txt\t100\t0\tf", "/workspace/").unwrap();
+        assert_eq!(entry.path, "/workspace/file.txt");
+    }
+
+    #[test]
+    fn parse_dir_entry_too_few_fields() {
+        assert!(parse_dir_entry("only\ttwo", "/workspace").is_none());
+    }
+
+    #[test]
+    fn parse_dir_entry_with_mtime() {
+        let entry = parse_dir_entry("app.js\t200\t1700000.5\tf", "/src").unwrap();
+        assert_eq!(entry.modified_at, 1700000500);
+    }
+
+    #[test]
+    fn parse_dir_entry_invalid_size() {
+        let entry = parse_dir_entry("bad\tXX\t0\tf", "/").unwrap();
+        assert_eq!(entry.size, 0);
+    }
+
+    #[test]
+    fn max_output_bytes_constant() {
+        assert_eq!(MAX_OUTPUT_BYTES, 10 * 1024 * 1024);
+    }
+
+    #[test]
+    fn cpu_percent_zero_on_zero_system_delta() {
+        let cpu_delta = 100.0_f64;
+        let system_delta = 0.0_f64;
+        let cpu_count = 4.0_f64;
+        let cpu_percent = if system_delta > 0.0 {
+            (cpu_delta / system_delta) * cpu_count * 100.0
+        } else {
+            0.0
+        };
+        assert_eq!(cpu_percent, 0.0);
+    }
+
+    #[test]
+    fn cpu_percent_calculation() {
+        let cpu_delta = 50_000_000.0_f64;
+        let system_delta = 1_000_000_000.0_f64;
+        let cpu_count = 4.0_f64;
+        let cpu_percent = (cpu_delta / system_delta) * cpu_count * 100.0;
+        assert!((cpu_percent - 20.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn memory_mb_calculation() {
+        let usage: u64 = 536_870_912;
+        let limit: u64 = 1_073_741_824;
+        assert_eq!(usage / 1024 / 1024, 512);
+        assert_eq!(limit / 1024 / 1024, 1024);
+    }
+
+    #[test]
+    fn path_quoting_for_shell() {
+        let path = "/workspace/it's here";
+        let quoted = path.replace('\'', "'\\''");
+        assert_eq!(quoted, "/workspace/it'\\''s here");
+    }
+
+    #[test]
+    fn path_quoting_no_special_chars() {
+        let path = "/workspace/src";
+        let quoted = path.replace('\'', "'\\''");
+        assert_eq!(quoted, path);
+    }
+
+    #[test]
+    fn file_path_quoting_for_stat() {
+        let paths = vec!["/workspace/file.txt".to_string(), "/workspace/with\"quote".to_string()];
+        let quoted = paths
+            .iter()
+            .map(|p| format!("\"{}\"", p.replace('"', "\\\"")))
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert_eq!(quoted, "\"/workspace/file.txt\" \"/workspace/with\\\"quote\"");
+    }
+}

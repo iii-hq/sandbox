@@ -1,0 +1,14 @@
+node_modules/
+target/
+.git/
+*.md
+test/
+examples/
+packages/sdk/
+packages/sdk-python/
+packages/sdk-rust/
+packages/cli/
+packages/mcp/
+docs/
+data/
+images/

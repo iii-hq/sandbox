@@ -36,7 +36,7 @@ Key decisions:
 # docker-compose.yml
 services:
   iii-engine:
-    image: ghcr.io/iii-hq/engine:latest
+    image: ghcr.io/iii-hq/iii:latest
     ports: ["49134:49134"]
 
   worker:
