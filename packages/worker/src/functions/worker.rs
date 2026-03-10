@@ -240,6 +240,14 @@ pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, conf
                     let mut expired = 0u64;
 
                     for dead in &dead_workers {
+                        let fresh: Option<WorkerInfo> =
+                            kv.get(WORKERS_SCOPE, &dead.worker_id).await;
+                        if let Some(ref w) = fresh {
+                            if now.saturating_sub(w.last_heartbeat) < HEARTBEAT_TIMEOUT_MS {
+                                continue;
+                            }
+                        }
+
                         let sandboxes: Vec<Value> = kv.list(scopes::SANDBOXES).await;
 
                         for sbx in &sandboxes {
@@ -267,8 +275,9 @@ pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, conf
                                         Value::String(cfg.worker_name.clone()),
                                     );
                                 }
-                                let _ = kv.set(scopes::SANDBOXES, &sbx_id, &updated).await;
-                                reassigned += 1;
+                                if kv.set(scopes::SANDBOXES, &sbx_id, &updated).await.is_ok() {
+                                    reassigned += 1;
+                                }
                             } else {
                                 let mut updated = sbx.clone();
                                 if let Some(obj) = updated.as_object_mut() {
@@ -277,13 +286,15 @@ pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, conf
                                         Value::String("expired".to_string()),
                                     );
                                 }
-                                let _ = kv.set(scopes::SANDBOXES, &sbx_id, &updated).await;
-                                expired += 1;
+                                if kv.set(scopes::SANDBOXES, &sbx_id, &updated).await.is_ok() {
+                                    expired += 1;
+                                }
                             }
                         }
 
-                        let _ = kv.delete(WORKERS_SCOPE, &dead.worker_id).await;
-                        reaped += 1;
+                        if kv.delete(WORKERS_SCOPE, &dead.worker_id).await.is_ok() {
+                            reaped += 1;
+                        }
                     }
 
                     Ok(json!({

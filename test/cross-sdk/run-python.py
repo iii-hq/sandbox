@@ -26,7 +26,7 @@ def make_headers(token: str) -> dict[str, str]:
 
 def http_post(client: httpx.Client, base_url: str, path: str, token: str, body: Any = None) -> Any:
     resp = client.post(
-        f"{base_url}{path}",
+        f"{base_url.rstrip('/')}{path}",
         headers=make_headers(token),
         json=body,
         timeout=30.0,
@@ -37,7 +37,7 @@ def http_post(client: httpx.Client, base_url: str, path: str, token: str, body: 
 
 def http_get(client: httpx.Client, base_url: str, path: str, token: str) -> Any:
     resp = client.get(
-        f"{base_url}{path}",
+        f"{base_url.rstrip('/')}{path}",
         headers=make_headers(token),
         timeout=30.0,
     )
@@ -47,7 +47,7 @@ def http_get(client: httpx.Client, base_url: str, path: str, token: str) -> Any:
 
 def http_delete(client: httpx.Client, base_url: str, path: str, token: str) -> Any:
     resp = client.delete(
-        f"{base_url}{path}",
+        f"{base_url.rstrip('/')}{path}",
         headers=make_headers(token),
         timeout=30.0,
     )
@@ -111,6 +111,7 @@ def run_step(client: httpx.Client, step: dict, ctx: dict) -> str:
 
     elif action == "kill":
         http_delete(client, base_url, f"{prefix}/sandboxes/{sbx_id}", token)
+        ctx["sandbox_id"] = ""
         result = {"success": True}
 
     elif action == "fs-write":

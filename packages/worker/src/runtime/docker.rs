@@ -181,11 +181,13 @@ impl SandboxRuntime for DockerRuntime {
     }
 
     async fn sandbox_exists(&self, container_name: &str) -> Result<bool, String> {
-        Ok(self
-            .docker
-            .inspect_container(container_name, None)
-            .await
-            .is_ok())
+        match self.docker.inspect_container(container_name, None).await {
+            Ok(_) => Ok(true),
+            Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 404, ..
+            }) => Ok(false),
+            Err(e) => Err(format!("Failed to inspect container: {e}")),
+        }
     }
 
     async fn sandbox_ip(&self, container_name: &str) -> Result<String, String> {

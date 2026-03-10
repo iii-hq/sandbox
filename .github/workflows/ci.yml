@@ -23,6 +23,7 @@ jobs:
       - run: cargo test
       - run: cargo clippy -- -D warnings
 
+  # Disabled: requires running iii-engine + Docker. Enable once CI infra supports it.
   integration-test:
     runs-on: ubuntu-latest
     if: false
@@ -40,7 +41,6 @@ jobs:
         env:
           TEST_BASE_URL: http://localhost:3111
           TEST_AUTH_TOKEN: test-token
-        continue-on-error: true
 
   ts-check:
     runs-on: ubuntu-latest

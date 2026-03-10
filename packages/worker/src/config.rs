@@ -60,8 +60,9 @@ impl EngineConfig {
                 .unwrap_or_else(|_| "ws://localhost:49134".to_string()),
             worker_name: env::var("III_WORKER_NAME").unwrap_or_else(|_| {
                 let hostname = env::var("HOSTNAME")
-                    .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string()[..8].to_string());
-                format!("iii-sandbox-{hostname}")
+                    .unwrap_or_else(|_| "local".to_string());
+                let suffix = &uuid::Uuid::new_v4().to_string()[..8];
+                format!("iii-sandbox-{hostname}-{suffix}")
             }),
             rest_port: parse_int_or_default("III_REST_PORT", 3111) as u16,
             api_prefix: env::var("III_API_PREFIX")

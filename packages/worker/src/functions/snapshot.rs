@@ -146,6 +146,7 @@ pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, conf
                 let base_config = if let Some(ref cfg_stored) = snapshot.config {
                     cfg_stored.clone()
                 } else {
+                    tracing::warn!(snapshot_id = %snapshot_id, "Snapshot missing stored config, falling back to source sandbox");
                     let source: Sandbox = kv.get(scopes::SANDBOXES, &snapshot.sandbox_id).await
                         .ok_or_else(|| iii_sdk::IIIError::Handler(format!("Source sandbox not found: {}", snapshot.sandbox_id)))?;
                     source.config.clone()

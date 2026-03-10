@@ -59,10 +59,10 @@
 - Full integration test suite
 - Cross-SDK test runner
 
-### Phase 5: Harden (Item 10) ✅
-- SandboxRuntime trait extraction (28 async methods)
-- DockerRuntime wrapper (delegates to bollard)
-- FirecrackerRuntime stub behind `firecracker` feature flag
-- IsolationBackend config via III_ISOLATION_BACKEND env var
-- All 24 function modules migrated to Arc<dyn SandboxRuntime>
-- 333 tests passing, 0 clippy warnings
+### Phase 5: Harden (Item 10) 🔶 Partial
+- SandboxRuntime trait extraction (28 async methods) ✅
+- DockerRuntime wrapper (delegates to bollard) ✅
+- FirecrackerRuntime stub behind `firecracker` feature flag (stub only, not functional)
+- IsolationBackend config via III_ISOLATION_BACKEND env var ✅
+- All 24 function modules migrated to Arc<dyn SandboxRuntime> ✅
+- 333 tests passing, 0 clippy warnings ✅

@@ -22,6 +22,10 @@ impl FirecrackerRuntime {
         vcpus: u32,
         mem_size_mib: u64,
     ) -> Self {
+        tracing::error!(
+            "FirecrackerRuntime is a stub — all sandbox operations will fail. \
+             Do not use isolation_backend=firecracker in production."
+        );
         Self {
             socket_dir,
             kernel_path,

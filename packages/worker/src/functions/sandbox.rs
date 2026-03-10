@@ -183,8 +183,12 @@ pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV, conf
                     .ok_or_else(|| iii_sdk::IIIError::Handler(format!("Sandbox not found: {id}")))?;
 
                 let container_name = format!("iii-sbx-{id}");
-                let _ = rt.stop_sandbox(&container_name).await;
-                let _ = rt.remove_sandbox(&container_name, true).await;
+                if let Err(e) = rt.stop_sandbox(&container_name).await {
+                    tracing::warn!(id = %id, error = %e, "Stop failed during kill");
+                }
+                if let Err(e) = rt.remove_sandbox(&container_name, true).await {
+                    tracing::warn!(id = %id, error = %e, "Remove failed during kill");
+                }
 
                 kv.delete(scopes::SANDBOXES, id).await
                     .map_err(|e| iii_sdk::IIIError::Handler(e.to_string()))?;

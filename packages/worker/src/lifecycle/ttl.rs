@@ -30,9 +30,15 @@ pub fn register(iii: &Arc<III>, rt: &Arc<dyn SandboxRuntime>, kv: &StateKV) {
                     if sandbox.expires_at <= now {
                         let cn = format!("iii-sbx-{}", sandbox.id);
                         let _ = rt.stop_sandbox(&cn).await;
-                        let _ = rt.remove_sandbox(&cn, true).await;
-                        let _ = kv.delete(scopes::SANDBOXES, &sandbox.id).await;
-                        swept += 1;
+                        match rt.remove_sandbox(&cn, true).await {
+                            Ok(_) => {
+                                let _ = kv.delete(scopes::SANDBOXES, &sandbox.id).await;
+                                swept += 1;
+                            }
+                            Err(e) => {
+                                tracing::warn!(id = %sandbox.id, error = %e, "TTL remove failed, keeping KV record");
+                            }
+                        }
                     }
                 }
 

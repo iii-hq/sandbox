@@ -40,8 +40,28 @@ async fn main() {
     iii.connect().await.expect("Failed to connect to iii-engine");
     info!("Connected to iii-engine");
 
-    let dk = connect_docker();
-    let rt: Arc<dyn SandboxRuntime> = Arc::new(DockerRuntime::new(dk));
+    let rt: Arc<dyn SandboxRuntime> = match config.isolation_backend.as_str() {
+        #[cfg(feature = "firecracker")]
+        "firecracker" => {
+            use runtime::firecracker::FirecrackerRuntime;
+            Arc::new(FirecrackerRuntime::new(
+                std::path::PathBuf::from("/tmp/firecracker-sockets"),
+                std::path::PathBuf::from(&config.firecracker_kernel),
+                std::path::PathBuf::from(&config.firecracker_rootfs),
+                config.firecracker_vcpus,
+                config.firecracker_mem_mib,
+            ))
+        }
+        "docker" => {
+            let dk = connect_docker();
+            Arc::new(DockerRuntime::new(dk))
+        }
+        other => {
+            tracing::warn!(backend = %other, "Unknown isolation backend, defaulting to docker");
+            let dk = connect_docker();
+            Arc::new(DockerRuntime::new(dk))
+        }
+    };
     info!(backend = %config.isolation_backend, "Isolation backend initialized");
 
     let kv = StateKV::new(iii.clone());

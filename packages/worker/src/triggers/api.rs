@@ -191,7 +191,14 @@ pub fn register(iii: &Arc<III>, config: &EngineConfig, limiter: &Arc<RateLimiter
                                     let scoped_fn = scoped_function_id(owner, &fn_id);
                                     match iii2.trigger(&scoped_fn, Value::Object(merged)).await {
                                         Ok(result) => return Ok(json!({"status_code": 200, "body": result})),
-                                        Err(e) => return Ok(json!({"status_code": 503, "body": {"error": format!("Forward failed: {e}")}})),
+                                        Err(e) => {
+                                            let msg = e.to_string();
+                                            let code = if msg.contains("not found") { 404 }
+                                                else if msg.contains("not allowed") { 403 }
+                                                else if msg.contains("not running") { 409 }
+                                                else { 502 };
+                                            return Ok(json!({"status_code": code, "body": {"error": format!("Forward failed: {msg}")}}));
+                                        }
                                     }
                                 }
                             }
@@ -219,7 +226,9 @@ pub fn register(iii: &Arc<III>, config: &EngineConfig, limiter: &Arc<RateLimiter
         }));
     }
 
-    // Direct streaming triggers (bypass wrap pattern)
+    // TODO: Streaming endpoints bypass owner-based routing. In multi-worker
+    // deployments, requests may land on the wrong worker. Add sandbox ownership
+    // checks and forwarding logic inside each streaming function.
     let _ = iii.register_trigger("http", "cmd::run-stream", json!({
         "api_path": format!("{p}/sandboxes/:id/exec/stream"),
         "http_method": "POST",
