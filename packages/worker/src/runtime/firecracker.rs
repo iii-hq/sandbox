@@ -57,7 +57,7 @@ impl FirecrackerRuntime {
         FcClient::new(&self.socket_path(vm_id).to_string_lossy())
     }
 
-    async fn agent_client(&self, vm_id: &str) -> Result<AgentClient, String> {
+    pub async fn agent_client(&self, vm_id: &str) -> Result<AgentClient, String> {
         let vms = self.vms.read().await;
         let vm = vms.get(vm_id)
             .ok_or_else(|| format!("VM not found: {vm_id}"))?;

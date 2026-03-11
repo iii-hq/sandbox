@@ -269,6 +269,47 @@ pub struct AgentProcessEntry {
     pub memory: f64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTerminalCreateRequest {
+    pub cols: u16,
+    pub rows: u16,
+    pub shell: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTerminalCreateResponse {
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTerminalWriteRequest {
+    pub session_id: String,
+    pub data: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTerminalReadRequest {
+    pub session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTerminalReadResponse {
+    pub data: String,
+    pub eof: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTerminalResizeRequest {
+    pub session_id: String,
+    pub cols: u16,
+    pub rows: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentTerminalCloseRequest {
+    pub session_id: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

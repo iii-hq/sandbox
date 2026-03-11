@@ -3,17 +3,37 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::os::unix::fs::MetadataExt;
+use std::os::unix::io::RawFd;
 use std::process::Command;
-use std::time::{Instant, UNIX_EPOCH};
+use std::sync::{Arc, Mutex};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 const MAX_BODY_SIZE: usize = 10 * 1024 * 1024;
+const MAX_PTY_SESSIONS: usize = 16;
+const PTY_READ_BUF_SIZE: usize = 65536;
+
+#[allow(dead_code)]
+struct PtySession {
+    master_fd: RawFd,
+    child_pid: libc::pid_t,
+    created_at: u64,
+}
+
+impl Drop for PtySession {
+    fn drop(&mut self) {
+        unsafe {
+            libc::kill(self.child_pid, libc::SIGKILL);
+            libc::waitpid(self.child_pid, std::ptr::null_mut(), libc::WNOHANG);
+            libc::close(self.master_fd);
+        }
+    }
+}
+
+type PtySessions = Arc<Mutex<HashMap<String, PtySession>>>;
+
+static PTY_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 fn main() {
-    #[cfg(unix)]
-    unsafe {
-        libc::signal(libc::SIGCHLD, libc::SIG_IGN);
-    }
-
     let port = std::env::var("AGENT_PORT")
         .unwrap_or_else(|_| "8052".to_string())
         .parse::<u16>()
@@ -27,11 +47,14 @@ fn main() {
 
     eprintln!("iii-guest-agent listening on port {port}");
 
+    let pty_sessions: PtySessions = Arc::new(Mutex::new(HashMap::new()));
+
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
+                let sessions = Arc::clone(&pty_sessions);
                 std::thread::spawn(move || {
-                    if let Err(e) = handle_connection(&mut stream) {
+                    if let Err(e) = handle_connection(&mut stream, &sessions) {
                         eprintln!("Request error: {e}");
                     }
                 });
@@ -41,7 +64,7 @@ fn main() {
     }
 }
 
-fn handle_connection(stream: &mut std::net::TcpStream) -> Result<(), String> {
+fn handle_connection(stream: &mut std::net::TcpStream, sessions: &PtySessions) -> Result<(), String> {
     let mut reader = BufReader::new(stream.try_clone().map_err(|e| e.to_string())?);
 
     let mut request_line = String::new();
@@ -91,6 +114,11 @@ fn handle_connection(stream: &mut std::net::TcpStream) -> Result<(), String> {
         ("POST", "/file/info") => handle_file_info(stream, &body),
         ("POST", "/stats") => handle_stats(stream),
         ("POST", "/processes") => handle_processes(stream),
+        ("POST", "/terminal/create") => handle_terminal_create(stream, &body, sessions),
+        ("POST", "/terminal/write") => handle_terminal_write(stream, &body, sessions),
+        ("POST", "/terminal/resize") => handle_terminal_resize(stream, &body, sessions),
+        ("POST", "/terminal/read") => handle_terminal_read(stream, &body, sessions),
+        ("POST", "/terminal/close") => handle_terminal_close(stream, &body, sessions),
         _ => send_response(stream, 404, &serde_json::json!({"error": "not found"})),
     }
 }
@@ -441,6 +469,231 @@ fn handle_processes(stream: &mut std::net::TcpStream) -> Result<(), String> {
     send_response(stream, 200, &processes)
 }
 
+#[derive(Deserialize)]
+struct TerminalCreateRequest {
+    #[serde(default = "default_shell")]
+    shell: String,
+    #[serde(default = "default_cols")]
+    cols: u16,
+    #[serde(default = "default_rows")]
+    rows: u16,
+}
+
+fn default_shell() -> String { "/bin/sh".to_string() }
+fn default_cols() -> u16 { 80 }
+fn default_rows() -> u16 { 24 }
+
+#[derive(Deserialize)]
+struct TerminalSessionRequest {
+    session_id: String,
+}
+
+#[derive(Deserialize)]
+struct TerminalWriteRequest {
+    session_id: String,
+    data: String,
+}
+
+#[derive(Deserialize)]
+struct TerminalResizeRequest {
+    session_id: String,
+    cols: u16,
+    rows: u16,
+}
+
+fn handle_terminal_create(
+    stream: &mut std::net::TcpStream,
+    body: &str,
+    sessions: &PtySessions,
+) -> Result<(), String> {
+    let req: TerminalCreateRequest = serde_json::from_str(body)
+        .map_err(|e| format!("Invalid terminal create request: {e}"))?;
+
+    {
+        let locked = sessions.lock().map_err(|e| e.to_string())?;
+        if locked.len() >= MAX_PTY_SESSIONS {
+            return send_response(
+                stream,
+                400,
+                &serde_json::json!({"error": "max pty sessions reached"}),
+            );
+        }
+    }
+
+    let mut master_fd: RawFd = -1;
+    let mut ws = libc::winsize {
+        ws_row: req.rows,
+        ws_col: req.cols,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+
+    let pid = unsafe { libc::forkpty(&mut master_fd, std::ptr::null_mut(), std::ptr::null_mut(), &mut ws) };
+
+    if pid < 0 {
+        return send_response(
+            stream,
+            500,
+            &serde_json::json!({"error": "forkpty failed"}),
+        );
+    }
+
+    if pid == 0 {
+        let shell = std::ffi::CString::new(req.shell.as_str()).unwrap_or_else(|_| {
+            std::ffi::CString::new("/bin/sh").unwrap()
+        });
+        let shell_name = req.shell.rsplit('/').next().unwrap_or("sh");
+        let argv0 = std::ffi::CString::new(format!("-{shell_name}")).unwrap_or_else(|_| {
+            std::ffi::CString::new("-sh").unwrap()
+        });
+        unsafe {
+            libc::execl(
+                shell.as_ptr(),
+                argv0.as_ptr(),
+                std::ptr::null::<libc::c_char>(),
+            );
+            libc::_exit(127);
+        }
+    }
+
+    unsafe {
+        let flags = libc::fcntl(master_fd, libc::F_GETFL);
+        libc::fcntl(master_fd, libc::F_SETFL, flags | libc::O_NONBLOCK);
+    }
+
+    let counter = PTY_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let session_id = format!("pty-{counter}");
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+
+    let session = PtySession {
+        master_fd,
+        child_pid: pid,
+        created_at: now,
+    };
+
+    {
+        let mut locked = sessions.lock().map_err(|e| e.to_string())?;
+        locked.insert(session_id.clone(), session);
+    }
+
+    send_response(
+        stream,
+        200,
+        &serde_json::json!({"session_id": session_id, "pid": pid}),
+    )
+}
+
+fn handle_terminal_write(
+    stream: &mut std::net::TcpStream,
+    body: &str,
+    sessions: &PtySessions,
+) -> Result<(), String> {
+    let req: TerminalWriteRequest = serde_json::from_str(body)
+        .map_err(|e| format!("Invalid terminal write request: {e}"))?;
+
+    let locked = sessions.lock().map_err(|e| e.to_string())?;
+    let session = locked.get(&req.session_id).ok_or_else(|| "session not found".to_string())?;
+
+    let data = req.data.as_bytes();
+    let written = unsafe {
+        libc::write(session.master_fd, data.as_ptr() as *const libc::c_void, data.len())
+    };
+
+    if written < 0 {
+        return send_response(
+            stream,
+            500,
+            &serde_json::json!({"error": "write to pty failed"}),
+        );
+    }
+
+    send_response(stream, 200, &serde_json::json!({"ok": true}))
+}
+
+fn handle_terminal_resize(
+    stream: &mut std::net::TcpStream,
+    body: &str,
+    sessions: &PtySessions,
+) -> Result<(), String> {
+    let req: TerminalResizeRequest = serde_json::from_str(body)
+        .map_err(|e| format!("Invalid terminal resize request: {e}"))?;
+
+    let locked = sessions.lock().map_err(|e| e.to_string())?;
+    let session = locked.get(&req.session_id).ok_or_else(|| "session not found".to_string())?;
+
+    let ws = libc::winsize {
+        ws_row: req.rows,
+        ws_col: req.cols,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+
+    let ret = unsafe { libc::ioctl(session.master_fd, libc::TIOCSWINSZ, &ws) };
+    if ret < 0 {
+        return send_response(
+            stream,
+            500,
+            &serde_json::json!({"error": "ioctl TIOCSWINSZ failed"}),
+        );
+    }
+
+    send_response(stream, 200, &serde_json::json!({"ok": true}))
+}
+
+fn handle_terminal_read(
+    stream: &mut std::net::TcpStream,
+    body: &str,
+    sessions: &PtySessions,
+) -> Result<(), String> {
+    let req: TerminalSessionRequest = serde_json::from_str(body)
+        .map_err(|e| format!("Invalid terminal read request: {e}"))?;
+
+    let locked = sessions.lock().map_err(|e| e.to_string())?;
+    let session = locked.get(&req.session_id).ok_or_else(|| "session not found".to_string())?;
+
+    let mut buf = vec![0u8; PTY_READ_BUF_SIZE];
+    let n = unsafe {
+        libc::read(
+            session.master_fd,
+            buf.as_mut_ptr() as *mut libc::c_void,
+            buf.len(),
+        )
+    };
+
+    let data = if n > 0 {
+        buf.truncate(n as usize);
+        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &buf)
+    } else {
+        String::new()
+    };
+
+    send_response(stream, 200, &serde_json::json!({"data": data}))
+}
+
+fn handle_terminal_close(
+    stream: &mut std::net::TcpStream,
+    body: &str,
+    sessions: &PtySessions,
+) -> Result<(), String> {
+    let req: TerminalSessionRequest = serde_json::from_str(body)
+        .map_err(|e| format!("Invalid terminal close request: {e}"))?;
+
+    let mut locked = sessions.lock().map_err(|e| e.to_string())?;
+    if locked.remove(&req.session_id).is_none() {
+        return send_response(
+            stream,
+            404,
+            &serde_json::json!({"error": "session not found"}),
+        );
+    }
+
+    send_response(stream, 200, &serde_json::json!({"ok": true}))
+}
+
 fn send_response<T: Serialize>(
     stream: &mut std::net::TcpStream,
     status: u16,
@@ -603,5 +856,61 @@ mod tests {
         let (rx, tx) = read_network_stats();
         assert!(rx == 0 || rx > 0);
         assert!(tx == 0 || tx > 0);
+    }
+
+    #[test]
+    fn terminal_create_request_defaults() {
+        let json = r#"{}"#;
+        let req: TerminalCreateRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.shell, "/bin/sh");
+        assert_eq!(req.cols, 80);
+        assert_eq!(req.rows, 24);
+    }
+
+    #[test]
+    fn terminal_create_request_custom() {
+        let json = r#"{"shell":"/bin/bash","cols":120,"rows":40}"#;
+        let req: TerminalCreateRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.shell, "/bin/bash");
+        assert_eq!(req.cols, 120);
+        assert_eq!(req.rows, 40);
+    }
+
+    #[test]
+    fn terminal_write_request_deserialization() {
+        let json = r#"{"session_id":"pty-1","data":"ls\n"}"#;
+        let req: TerminalWriteRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.session_id, "pty-1");
+        assert_eq!(req.data, "ls\n");
+    }
+
+    #[test]
+    fn terminal_resize_request_deserialization() {
+        let json = r#"{"session_id":"pty-1","cols":120,"rows":40}"#;
+        let req: TerminalResizeRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.session_id, "pty-1");
+        assert_eq!(req.cols, 120);
+        assert_eq!(req.rows, 40);
+    }
+
+    #[test]
+    fn terminal_session_request_deserialization() {
+        let json = r#"{"session_id":"pty-42"}"#;
+        let req: TerminalSessionRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.session_id, "pty-42");
+    }
+
+    #[test]
+    fn pty_counter_increments() {
+        let a = PTY_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let b = PTY_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(b, a + 1);
+    }
+
+    #[test]
+    fn pty_sessions_max_check() {
+        let sessions: PtySessions = Arc::new(Mutex::new(HashMap::new()));
+        let locked = sessions.lock().unwrap();
+        assert!(locked.len() < MAX_PTY_SESSIONS);
     }
 }

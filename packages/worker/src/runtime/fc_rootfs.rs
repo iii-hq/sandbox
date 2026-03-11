@@ -55,6 +55,8 @@ pub async fn ensure_rootfs(
             .map_err(|e| format!("Failed to copy guest agent: {e}"))?;
     }
 
+    super::fc_init::inject_init(&merged_dir).await?;
+
     let temp_rootfs_path = cache_dir.join(format!("{safe_name}.ext4.tmp"));
     create_ext4(&merged_dir, &temp_rootfs_path).await?;
 
@@ -250,19 +252,6 @@ async fn merge_layers(extract_dir: &Path, merged_dir: &Path) -> Result<(), Strin
             }
         }
     }
-
-    let etc_dir = merged_dir.join("etc");
-    fs::create_dir_all(&etc_dir)
-        .await
-        .map_err(|e| format!("Failed to create etc dir: {e}"))?;
-
-    let init_script = merged_dir.join("etc/rc.local");
-    fs::write(
-        &init_script,
-        "#!/bin/sh\n/usr/local/bin/iii-guest-agent &\n",
-    )
-    .await
-    .map_err(|e| format!("Failed to write init script: {e}"))?;
 
     Ok(())
 }

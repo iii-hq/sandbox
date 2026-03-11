@@ -153,6 +153,8 @@ pub mod fc_api;
 #[cfg(feature = "firecracker")]
 pub mod fc_network;
 #[cfg(feature = "firecracker")]
+pub mod fc_init;
+#[cfg(feature = "firecracker")]
 pub mod fc_rootfs;
 #[cfg(feature = "firecracker")]
 pub mod fc_types;

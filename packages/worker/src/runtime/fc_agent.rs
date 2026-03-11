@@ -251,6 +251,96 @@ impl AgentClient {
         self.send_request("/processes", &ProcReq {}, DEFAULT_TIMEOUT).await
     }
 
+    pub async fn terminal_create(
+        &self,
+        cols: u16,
+        rows: u16,
+        shell: &str,
+    ) -> Result<String, String> {
+        let req = AgentTerminalCreateRequest {
+            cols,
+            rows,
+            shell: shell.to_string(),
+        };
+
+        let resp: AgentTerminalCreateResponse = self
+            .send_request("/terminal/create", &req, DEFAULT_TIMEOUT)
+            .await?;
+        Ok(resp.session_id)
+    }
+
+    pub async fn terminal_write(
+        &self,
+        session_id: &str,
+        data: &[u8],
+    ) -> Result<(), String> {
+        let req = AgentTerminalWriteRequest {
+            session_id: session_id.to_string(),
+            data: base64::Engine::encode(
+                &base64::engine::general_purpose::STANDARD,
+                data,
+            ),
+        };
+
+        let _: serde_json::Value = self
+            .send_request("/terminal/write", &req, DEFAULT_TIMEOUT)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn terminal_read(
+        &self,
+        session_id: &str,
+    ) -> Result<(Vec<u8>, bool), String> {
+        let req = AgentTerminalReadRequest {
+            session_id: session_id.to_string(),
+        };
+
+        let resp: AgentTerminalReadResponse = self
+            .send_request("/terminal/read", &req, DEFAULT_TIMEOUT)
+            .await?;
+
+        let data = base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            &resp.data,
+        )
+        .map_err(|e| format!("Failed to decode terminal data: {e}"))?;
+
+        Ok((data, resp.eof))
+    }
+
+    pub async fn terminal_resize(
+        &self,
+        session_id: &str,
+        cols: u16,
+        rows: u16,
+    ) -> Result<(), String> {
+        let req = AgentTerminalResizeRequest {
+            session_id: session_id.to_string(),
+            cols,
+            rows,
+        };
+
+        let _: serde_json::Value = self
+            .send_request("/terminal/resize", &req, DEFAULT_TIMEOUT)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn terminal_close(
+        &self,
+        session_id: &str,
+    ) -> Result<(), String> {
+        let req = AgentTerminalCloseRequest {
+            session_id: session_id.to_string(),
+        };
+
+        let _: serde_json::Value = self
+            .send_request("/terminal/close", &req, DEFAULT_TIMEOUT)
+            .await?;
+        Ok(())
+    }
+
     pub async fn health_check(&self) -> Result<bool, String> {
         #[derive(serde::Serialize)]
         struct HealthReq {}

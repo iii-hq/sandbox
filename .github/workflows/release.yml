@@ -4,12 +4,59 @@ on:
     tags: ["v*"]
 
 jobs:
+  guest-agent:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            artifact: iii-guest-agent-x86_64
+          - target: aarch64-unknown-linux-musl
+            artifact: iii-guest-agent-aarch64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install cross-compilation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu
+            mkdir -p .cargo
+            printf '[target.aarch64-unknown-linux-musl]\nlinker = "aarch64-linux-gnu-gcc"\n' > .cargo/config.toml
+          fi
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/guest-agent
+          key: ${{ matrix.target }}
+      - name: Build guest-agent
+        run: cargo build --release --target ${{ matrix.target }} --manifest-path packages/guest-agent/Cargo.toml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: packages/guest-agent/target/${{ matrix.target }}/release/iii-guest-agent
+
   docker:
     runs-on: ubuntu-latest
+    needs: [guest-agent]
     permissions:
       packages: write
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: iii-guest-agent-x86_64
+          path: packages/worker/guest-agent-amd64
+      - uses: actions/download-artifact@v4
+        with:
+          name: iii-guest-agent-aarch64
+          path: packages/worker/guest-agent-arm64
+      - name: Prepare guest-agent binaries
+        run: |
+          chmod +x packages/worker/guest-agent-amd64/iii-guest-agent
+          chmod +x packages/worker/guest-agent-arm64/iii-guest-agent
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -27,6 +74,31 @@ jobs:
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  github-release:
+    runs-on: ubuntu-latest
+    needs: [guest-agent]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: iii-guest-agent-x86_64
+          path: artifacts/x86_64
+      - uses: actions/download-artifact@v4
+        with:
+          name: iii-guest-agent-aarch64
+          path: artifacts/aarch64
+      - name: Rename binaries
+        run: |
+          mv artifacts/x86_64/iii-guest-agent artifacts/iii-guest-agent-x86_64
+          mv artifacts/aarch64/iii-guest-agent artifacts/iii-guest-agent-aarch64
+          chmod +x artifacts/iii-guest-agent-*
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/iii-guest-agent-x86_64
+            artifacts/iii-guest-agent-aarch64
 
   npm:
     runs-on: ubuntu-latest
