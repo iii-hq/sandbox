@@ -6,7 +6,14 @@ use std::os::unix::fs::MetadataExt;
 use std::process::Command;
 use std::time::{Instant, UNIX_EPOCH};
 
+const MAX_BODY_SIZE: usize = 10 * 1024 * 1024;
+
 fn main() {
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGCHLD, libc::SIG_IGN);
+    }
+
     let port = std::env::var("AGENT_PORT")
         .unwrap_or_else(|_| "8052".to_string())
         .parse::<u16>()
@@ -62,6 +69,9 @@ fn handle_connection(stream: &mut std::net::TcpStream) -> Result<(), String> {
     }
 
     let body = if content_length > 0 {
+        if content_length > MAX_BODY_SIZE {
+            return send_response(stream, 400, &serde_json::json!({"error": "body too large"}));
+        }
         let mut buf = vec![0u8; content_length];
         reader.read_exact(&mut buf).map_err(|e| e.to_string())?;
         String::from_utf8_lossy(&buf).to_string()
@@ -193,7 +203,8 @@ fn handle_file_write(stream: &mut std::net::TcpStream, body: &str) -> Result<(),
     if let Some(mode) = req.mode {
         use std::os::unix::fs::PermissionsExt;
         let perms = std::fs::Permissions::from_mode(mode);
-        let _ = std::fs::set_permissions(&req.path, perms);
+        std::fs::set_permissions(&req.path, perms)
+            .map_err(|e| format!("Failed to set permissions on {}: {e}", req.path))?;
     }
 
     send_response(stream, 200, &serde_json::json!({"ok": true}))

@@ -60,6 +60,18 @@ impl AgentClient {
             .map_err(|e| format!("Failed to read agent response: {e}"))?;
 
         let response_str = String::from_utf8_lossy(&response);
+
+        if let Some(status_line) = response_str.lines().next() {
+            if let Some(code_str) = status_line.split_whitespace().nth(1) {
+                if let Ok(code) = code_str.parse::<u16>() {
+                    if code >= 400 {
+                        let body_str = extract_body(&response_str);
+                        return Err(format!("Agent error {code} on {endpoint}: {body_str}"));
+                    }
+                }
+            }
+        }
+
         let body_str = extract_body(&response_str);
 
         serde_json::from_str(body_str)

@@ -55,7 +55,15 @@ pub async fn ensure_rootfs(
             .map_err(|e| format!("Failed to copy guest agent: {e}"))?;
     }
 
-    create_ext4(&merged_dir, &rootfs_path).await?;
+    let temp_rootfs_path = cache_dir.join(format!("{safe_name}.ext4.tmp"));
+    create_ext4(&merged_dir, &temp_rootfs_path).await?;
+
+    fs::rename(&temp_rootfs_path, &rootfs_path)
+        .await
+        .map_err(|e| {
+            let _ = std::fs::remove_file(&temp_rootfs_path);
+            format!("Failed to finalize rootfs: {e}")
+        })?;
 
     let _ = fs::remove_file(&tar_path).await;
     let _ = fs::remove_dir_all(&extract_dir).await;
@@ -90,28 +98,51 @@ async fn export_image_to_tar(
         .await
         .map_err(|e| format!("Failed to create export container: {e}"))?;
 
-    let mut archive_stream = docker.export_container(&container_name);
-    let mut file = tokio::fs::File::create(tar_path)
-        .await
-        .map_err(|e| format!("Failed to create tar file: {e}"))?;
+    let cleanup = |docker: &Arc<Docker>, name: String| {
+        let docker = docker.clone();
+        async move {
+            let _ = docker
+                .remove_container(
+                    &name,
+                    Some(RemoveContainerOptions {
+                        force: true,
+                        ..Default::default()
+                    }),
+                )
+                .await;
+        }
+    };
 
+    let mut archive_stream = docker.export_container(&container_name);
+    let mut file = match tokio::fs::File::create(tar_path).await {
+        Ok(f) => f,
+        Err(e) => {
+            cleanup(docker, container_name).await;
+            return Err(format!("Failed to create tar file: {e}"));
+        }
+    };
+
+    let mut export_error = None;
     while let Some(chunk) = archive_stream.next().await {
-        let data = chunk.map_err(|e| format!("Export stream error: {e}"))?;
-        tokio::io::AsyncWriteExt::write_all(&mut file, &data)
-            .await
-            .map_err(|e| format!("Failed to write tar: {e}"))?;
+        match chunk {
+            Ok(data) => {
+                if let Err(e) = tokio::io::AsyncWriteExt::write_all(&mut file, &data).await {
+                    export_error = Some(format!("Failed to write tar: {e}"));
+                    break;
+                }
+            }
+            Err(e) => {
+                export_error = Some(format!("Export stream error: {e}"));
+                break;
+            }
+        }
     }
 
-    docker
-        .remove_container(
-            &container_name,
-            Some(RemoveContainerOptions {
-                force: true,
-                ..Default::default()
-            }),
-        )
-        .await
-        .map_err(|e| format!("Failed to remove export container: {e}"))?;
+    cleanup(docker, container_name).await;
+
+    if let Some(e) = export_error {
+        return Err(e);
+    }
 
     Ok(())
 }
@@ -150,7 +181,9 @@ async fn extract_layers(extract_dir: &Path) -> Result<(), String> {
                     let full_path = extract_dir.join(layer_path);
                     if full_path.exists() {
                         let layer_dir = extract_dir.join("_layers");
-                        let _ = fs::create_dir_all(&layer_dir).await;
+                        fs::create_dir_all(&layer_dir)
+                            .await
+                            .map_err(|e| format!("Failed to create layers dir: {e}"))?;
 
                         let output = Command::new("tar")
                             .args(["xf", &full_path.to_string_lossy(), "-C", &layer_dir.to_string_lossy()])
@@ -177,41 +210,51 @@ async fn extract_layers(extract_dir: &Path) -> Result<(), String> {
 async fn merge_layers(extract_dir: &Path, merged_dir: &Path) -> Result<(), String> {
     let layers_dir = extract_dir.join("_layers");
     if layers_dir.exists() {
-        let output = Command::new("cp")
-            .args(["-a", &format!("{}/*", layers_dir.to_string_lossy()), &merged_dir.to_string_lossy()])
-            .output()
-            .await;
+        let mut entries = fs::read_dir(&layers_dir)
+            .await
+            .map_err(|e| format!("Failed to read layers dir: {e}"))?;
 
-        if output.is_err() || !output.as_ref().map(|o| o.status.success()).unwrap_or(false) {
-            let output = Command::new("sh")
-                .args(["-c", &format!("cp -a {}/* {}/", layers_dir.to_string_lossy(), merged_dir.to_string_lossy())])
+        while let Some(entry) = entries.next_entry().await.map_err(|e| format!("Failed to read entry: {e}"))? {
+            let src = entry.path();
+            let src_lossy = src.to_string_lossy();
+            let dest_lossy = merged_dir.to_string_lossy();
+            let output = Command::new("cp")
+                .args(["-a", src_lossy.as_ref(), dest_lossy.as_ref()])
                 .output()
                 .await
-                .map_err(|e| format!("Failed to merge layers: {e}"))?;
+                .map_err(|e| format!("Failed to copy layer entry: {e}"))?;
 
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
-                tracing::warn!(stderr = %stderr, "Layer merge had warnings");
+                tracing::warn!(path = %src.display(), stderr = %stderr, "Layer copy had warnings");
             }
         }
     } else {
-        let output = Command::new("sh")
-            .args(["-c", &format!(
-                "for f in {}/*.tar; do tar xf \"$f\" -C {} 2>/dev/null; done",
-                extract_dir.to_string_lossy(),
-                merged_dir.to_string_lossy()
-            )])
-            .output()
+        let mut entries = fs::read_dir(extract_dir)
             .await
-            .map_err(|e| format!("Failed to extract layers: {e}"))?;
+            .map_err(|e| format!("Failed to read extract dir: {e}"))?;
 
-        if !output.status.success() {
-            tracing::warn!("Layer extraction had warnings");
+        while let Some(entry) = entries.next_entry().await.map_err(|e| format!("Failed to read entry: {e}"))? {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("tar") {
+                let output = Command::new("tar")
+                    .args(["xf", &path.to_string_lossy(), "-C", &merged_dir.to_string_lossy()])
+                    .output()
+                    .await;
+
+                if let Ok(o) = &output {
+                    if !o.status.success() {
+                        tracing::warn!(path = %path.display(), "Layer tar extraction had warnings");
+                    }
+                }
+            }
         }
     }
 
     let etc_dir = merged_dir.join("etc");
-    let _ = fs::create_dir_all(&etc_dir).await;
+    fs::create_dir_all(&etc_dir)
+        .await
+        .map_err(|e| format!("Failed to create etc dir: {e}"))?;
 
     let init_script = merged_dir.join("etc/rc.local");
     fs::write(
@@ -269,29 +312,44 @@ async fn create_ext4(source_dir: &Path, output_path: &Path) -> Result<(), String
         return Err(format!("mount failed: {}", String::from_utf8_lossy(&output.stderr)));
     }
 
-    let cp_result = Command::new("sh")
-        .args(["-c", &format!(
-            "cp -a {}/* {}/",
-            source_dir.to_string_lossy(),
-            mount_dir.to_string_lossy()
-        )])
-        .output()
-        .await;
+    let mut cp_error = None;
+    match fs::read_dir(source_dir).await {
+        Ok(mut entries) => {
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                let src = entry.path();
+                let src_lossy = src.to_string_lossy();
+                let dest_lossy = mount_dir.to_string_lossy();
+                let output = Command::new("cp")
+                    .args(["-a", src_lossy.as_ref(), dest_lossy.as_ref()])
+                    .output()
+                    .await;
+
+                match output {
+                    Ok(o) if !o.status.success() => {
+                        let stderr = String::from_utf8_lossy(&o.stderr);
+                        tracing::warn!(path = %src.display(), stderr = %stderr, "cp to rootfs had warnings");
+                    }
+                    Err(e) => {
+                        cp_error = Some(format!("Failed to copy {} to rootfs: {e}", src.display()));
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Err(e) => {
+            cp_error = Some(format!("Failed to read source dir: {e}"));
+        }
+    }
 
     let _ = Command::new("umount").arg(mount_dir.to_string_lossy().to_string()).output().await;
     let _ = fs::remove_dir(&mount_dir).await;
 
-    match cp_result {
-        Ok(o) if o.status.success() => Ok(()),
-        Ok(o) => {
-            let stderr = String::from_utf8_lossy(&o.stderr);
-            if stderr.contains("cannot") {
-                tracing::warn!(stderr = %stderr, "cp to rootfs had warnings");
-            }
-            Ok(())
-        }
-        Err(e) => Err(format!("Failed to copy files to rootfs: {e}")),
+    if let Some(e) = cp_error {
+        return Err(e);
     }
+
+    Ok(())
 }
 
 async fn get_dir_size(path: &Path) -> Result<u64, String> {

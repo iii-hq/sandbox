@@ -4,6 +4,7 @@ use tokio::process::Command;
 pub struct SubnetAllocator {
     base: [u8; 2],
     allocated: HashMap<String, u8>,
+    free_list: Vec<u8>,
     next_subnet: u8,
 }
 
@@ -12,38 +13,47 @@ impl SubnetAllocator {
         Self {
             base,
             allocated: HashMap::new(),
+            free_list: Vec::new(),
             next_subnet: 1,
         }
     }
 
     pub fn allocate(&mut self, vm_id: &str) -> Result<SubnetInfo, String> {
-        if self.next_subnet >= 254 {
-            return Err("No available subnets".to_string());
+        if let Some(&existing) = self.allocated.get(vm_id) {
+            return Ok(self.build_info(existing));
         }
 
-        let subnet_id = self.next_subnet;
-        self.next_subnet += 1;
-        self.allocated.insert(vm_id.to_string(), subnet_id);
+        let subnet_id = if let Some(recycled) = self.free_list.pop() {
+            recycled
+        } else if self.next_subnet < 254 {
+            let id = self.next_subnet;
+            self.next_subnet += 1;
+            id
+        } else {
+            return Err("No available subnets".to_string());
+        };
 
-        Ok(SubnetInfo {
-            host_ip: format!("{}.{}.{}.1", self.base[0], self.base[1], subnet_id),
-            guest_ip: format!("{}.{}.{}.2", self.base[0], self.base[1], subnet_id),
-            netmask: "255.255.255.252".to_string(),
-            subnet_id,
-        })
+        self.allocated.insert(vm_id.to_string(), subnet_id);
+        Ok(self.build_info(subnet_id))
     }
 
     pub fn release(&mut self, vm_id: &str) {
-        self.allocated.remove(vm_id);
+        if let Some(subnet_id) = self.allocated.remove(vm_id) {
+            self.free_list.push(subnet_id);
+        }
     }
 
     pub fn get(&self, vm_id: &str) -> Option<SubnetInfo> {
-        self.allocated.get(vm_id).map(|&subnet_id| SubnetInfo {
+        self.allocated.get(vm_id).map(|&id| self.build_info(id))
+    }
+
+    fn build_info(&self, subnet_id: u8) -> SubnetInfo {
+        SubnetInfo {
             host_ip: format!("{}.{}.{}.1", self.base[0], self.base[1], subnet_id),
             guest_ip: format!("{}.{}.{}.2", self.base[0], self.base[1], subnet_id),
             netmask: "255.255.255.252".to_string(),
             subnet_id,
-        })
+        }
     }
 }
 
@@ -61,8 +71,17 @@ pub fn generate_mac(vm_index: u8) -> String {
 
 pub async fn create_tap_device(tap_name: &str, host_ip: &str) -> Result<(), String> {
     run_cmd("ip", &["tuntap", "add", "dev", tap_name, "mode", "tap"]).await?;
-    run_cmd("ip", &["addr", "add", &format!("{host_ip}/30"), "dev", tap_name]).await?;
-    run_cmd("ip", &["link", "set", "dev", tap_name, "up"]).await?;
+
+    if let Err(e) = run_cmd("ip", &["addr", "add", &format!("{host_ip}/30"), "dev", tap_name]).await {
+        let _ = run_cmd("ip", &["link", "del", tap_name]).await;
+        return Err(e);
+    }
+
+    if let Err(e) = run_cmd("ip", &["link", "set", "dev", tap_name, "up"]).await {
+        let _ = run_cmd("ip", &["link", "del", tap_name]).await;
+        return Err(e);
+    }
+
     Ok(())
 }
 
@@ -214,9 +233,30 @@ mod tests {
 
     #[test]
     fn subnet_info_netmask() {
-        let alloc = SubnetAllocator::new([10, 0]);
-        let mut alloc = alloc;
+        let mut alloc = SubnetAllocator::new([10, 0]);
         let info = alloc.allocate("vm1").unwrap();
         assert_eq!(info.netmask, "255.255.255.252");
+    }
+
+    #[test]
+    fn subnet_allocator_reclaim() {
+        let mut alloc = SubnetAllocator::new([172, 16]);
+        let info1 = alloc.allocate("vm1").unwrap();
+        assert_eq!(info1.subnet_id, 1);
+
+        alloc.allocate("vm2").unwrap();
+        alloc.release("vm1");
+
+        let info3 = alloc.allocate("vm3").unwrap();
+        assert_eq!(info3.subnet_id, 1);
+    }
+
+    #[test]
+    fn subnet_allocator_idempotent() {
+        let mut alloc = SubnetAllocator::new([172, 16]);
+        let info1 = alloc.allocate("vm1").unwrap();
+        let info2 = alloc.allocate("vm1").unwrap();
+        assert_eq!(info1.subnet_id, info2.subnet_id);
+        assert_eq!(alloc.next_subnet, 2);
     }
 }

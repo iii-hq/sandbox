@@ -1,9 +1,13 @@
 use std::path::Path;
+use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
+use tokio::time::timeout;
 use serde::de::DeserializeOwned;
 
 use super::fc_types::*;
+
+const SOCKET_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct FcClient {
     socket_path: String,
@@ -43,8 +47,9 @@ impl FcClient {
         path: &str,
         body: Option<&str>,
     ) -> Result<String, String> {
-        let mut stream = UnixStream::connect(&self.socket_path)
+        let mut stream = timeout(Duration::from_secs(5), UnixStream::connect(&self.socket_path))
             .await
+            .map_err(|_| format!("Timeout connecting to Firecracker socket {}", self.socket_path))?
             .map_err(|e| format!("Failed to connect to Firecracker socket {}: {e}", self.socket_path))?;
 
         let body_bytes = body.unwrap_or("");
@@ -69,19 +74,20 @@ impl FcClient {
             )
         };
 
-        stream
-            .write_all(request.as_bytes())
+        timeout(SOCKET_TIMEOUT, stream.write_all(request.as_bytes()))
             .await
+            .map_err(|_| "Timeout writing to Firecracker socket".to_string())?
             .map_err(|e| format!("Failed to write to socket: {e}"))?;
-        stream
-            .shutdown()
+
+        timeout(Duration::from_secs(5), stream.shutdown())
             .await
+            .map_err(|_| "Timeout shutting down write".to_string())?
             .map_err(|e| format!("Failed to shutdown write: {e}"))?;
 
         let mut response = Vec::new();
-        stream
-            .read_to_end(&mut response)
+        timeout(SOCKET_TIMEOUT, stream.read_to_end(&mut response))
             .await
+            .map_err(|_| "Timeout reading from Firecracker socket".to_string())?
             .map_err(|e| format!("Failed to read from socket: {e}"))?;
 
         let response_str = String::from_utf8_lossy(&response);
@@ -169,23 +175,16 @@ impl FcClient {
 }
 
 fn parse_http_response(raw: &str) -> Result<String, String> {
-    let parts: Vec<&str> = raw.splitn(2, "\r\n\r\n").collect();
-    if parts.len() < 2 {
-        let parts_alt: Vec<&str> = raw.splitn(2, "\n\n").collect();
-        if parts_alt.len() < 2 {
-            return Ok(String::new());
-        }
-        let status_line = parts_alt[0].lines().next().unwrap_or("");
-        let status_code = extract_status_code(status_line);
-        if status_code >= 400 {
-            return Err(format!("Firecracker API error {status_code}: {}", parts_alt[1].trim()));
-        }
-        return Ok(parts_alt[1].trim().to_string());
-    }
+    let (headers, body) = if let Some((h, b)) = raw.split_once("\r\n\r\n") {
+        (h, b.trim())
+    } else if let Some((h, b)) = raw.split_once("\n\n") {
+        (h, b.trim())
+    } else {
+        return Err(format!("Malformed HTTP response (no body separator): {}", raw.chars().take(200).collect::<String>()));
+    };
 
-    let status_line = parts[0].lines().next().unwrap_or("");
-    let status_code = extract_status_code(status_line);
-    let body = parts[1].trim();
+    let status_line = headers.lines().next().unwrap_or("");
+    let status_code = extract_status_code(status_line)?;
 
     if status_code >= 400 {
         return Err(format!("Firecracker API error {status_code}: {body}"));
@@ -194,12 +193,12 @@ fn parse_http_response(raw: &str) -> Result<String, String> {
     Ok(body.to_string())
 }
 
-fn extract_status_code(status_line: &str) -> u16 {
+fn extract_status_code(status_line: &str) -> Result<u16, String> {
     status_line
         .split_whitespace()
         .nth(1)
         .and_then(|s| s.parse().ok())
-        .unwrap_or(200)
+        .ok_or_else(|| format!("Failed to parse HTTP status from: {status_line}"))
 }
 
 #[cfg(test)]
@@ -229,23 +228,23 @@ mod tests {
     }
 
     #[test]
-    fn parse_http_no_body() {
+    fn parse_http_no_body_separator_is_error() {
         let raw = "HTTP/1.1 200 OK";
-        let result = parse_http_response(raw).unwrap();
-        assert!(result.is_empty());
+        let result = parse_http_response(raw);
+        assert!(result.is_err());
     }
 
     #[test]
     fn extract_status_code_valid() {
-        assert_eq!(extract_status_code("HTTP/1.1 200 OK"), 200);
-        assert_eq!(extract_status_code("HTTP/1.1 404 Not Found"), 404);
-        assert_eq!(extract_status_code("HTTP/1.1 204 No Content"), 204);
+        assert_eq!(extract_status_code("HTTP/1.1 200 OK").unwrap(), 200);
+        assert_eq!(extract_status_code("HTTP/1.1 404 Not Found").unwrap(), 404);
+        assert_eq!(extract_status_code("HTTP/1.1 204 No Content").unwrap(), 204);
     }
 
     #[test]
     fn extract_status_code_invalid() {
-        assert_eq!(extract_status_code("garbage"), 200);
-        assert_eq!(extract_status_code(""), 200);
+        assert!(extract_status_code("garbage").is_err());
+        assert!(extract_status_code("").is_err());
     }
 
     #[test]

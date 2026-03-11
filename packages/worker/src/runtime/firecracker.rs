@@ -99,7 +99,8 @@ impl FirecrackerRuntime {
             .spawn()
             .map_err(|e| format!("Failed to start Firecracker: {e}"))?;
 
-        let pid = child.id().unwrap_or(0);
+        let pid = child.id()
+            .ok_or_else(|| "Failed to get Firecracker process ID".to_string())?;
 
         for _ in 0..50 {
             if socket_path.exists() {
@@ -199,6 +200,60 @@ impl FirecrackerRuntime {
         Err(format!("Guest agent did not become ready in VM {vm_id}"))
     }
 
+    #[allow(clippy::too_many_arguments)]
+    async fn setup_vm(
+        &self,
+        id: &str,
+        vm_rootfs: &std::path::Path,
+        vcpus: u32,
+        mem_mib: u64,
+        guest_cid: u32,
+        subnet: &SubnetInfo,
+        tap_name: &str,
+    ) -> Result<(), String> {
+        super::fc_network::create_tap_device(tap_name, &subnet.host_ip).await?;
+
+        let guest_subnet = format!("{}/30", subnet.guest_ip);
+        super::fc_network::setup_nat(tap_name, &guest_subnet).await?;
+
+        let pid = self.start_firecracker_process(id).await?;
+
+        self.configure_vm(id, vm_rootfs, vcpus, mem_mib, guest_cid, subnet).await?;
+
+        let client = self.fc_client(id);
+        client.start_instance().await?;
+
+        self.wait_for_agent(id, guest_cid).await?;
+
+        let vm = VmInstance {
+            id: id.to_string(),
+            socket_path: self.socket_path(id),
+            rootfs_path: vm_rootfs.to_path_buf(),
+            pid: Some(pid),
+            guest_cid,
+            tap_name: tap_name.to_string(),
+            guest_ip: subnet.guest_ip.clone(),
+            host_ip: subnet.host_ip.clone(),
+            state: VmLifecycleState::Running,
+            vcpus,
+            mem_mib,
+            labels: HashMap::new(),
+            port_mappings: HashMap::new(),
+        };
+
+        let mut vms = self.vms.write().await;
+        vms.insert(id.to_string(), vm);
+
+        tracing::info!(
+            vm_id = %id,
+            guest_ip = %subnet.guest_ip,
+            cid = guest_cid,
+            "Firecracker VM created"
+        );
+
+        Ok(())
+    }
+
     fn strip_prefix(container_name: &str) -> &str {
         container_name.strip_prefix("iii-sbx-").unwrap_or(container_name)
     }
@@ -248,47 +303,22 @@ impl SandboxRuntime for FirecrackerRuntime {
         };
 
         let tap_name = format!("{}{}", self.config.tap_prefix, subnet.subnet_id);
-        super::fc_network::create_tap_device(&tap_name, &subnet.host_ip).await?;
 
-        let guest_subnet = format!("{}/30", subnet.guest_ip);
-        super::fc_network::setup_nat(&tap_name, &guest_subnet).await?;
+        let result = self.setup_vm(id, &vm_rootfs, vcpus, mem_mib, guest_cid, &subnet, &tap_name).await;
 
-        let pid = self.start_firecracker_process(id).await?;
+        if let Err(e) = &result {
+            tracing::error!(vm_id = %id, error = %e, "VM creation failed, cleaning up");
+            let _ = tokio::fs::remove_file(&vm_rootfs).await;
+            let guest_subnet = format!("{}/30", subnet.guest_ip);
+            let _ = super::fc_network::teardown_nat(&tap_name, &guest_subnet).await;
+            let _ = super::fc_network::delete_tap_device(&tap_name).await;
+            let _ = tokio::fs::remove_file(&self.socket_path(id)).await;
+            let _ = tokio::fs::remove_file(&self.vsock_path(id)).await;
+            let mut allocator = self.subnet_allocator.lock().await;
+            allocator.release(id);
+        }
 
-        self.configure_vm(id, &vm_rootfs, vcpus, mem_mib, guest_cid, &subnet).await?;
-
-        let client = self.fc_client(id);
-        client.start_instance().await?;
-
-        self.wait_for_agent(id, guest_cid).await?;
-
-        let vm = VmInstance {
-            id: id.to_string(),
-            socket_path: self.socket_path(id),
-            rootfs_path: vm_rootfs,
-            pid: Some(pid),
-            guest_cid,
-            tap_name,
-            guest_ip: subnet.guest_ip.clone(),
-            host_ip: subnet.host_ip.clone(),
-            state: VmLifecycleState::Running,
-            vcpus,
-            mem_mib,
-            labels: HashMap::new(),
-            port_mappings: HashMap::new(),
-        };
-
-        let mut vms = self.vms.write().await;
-        vms.insert(id.to_string(), vm);
-
-        tracing::info!(
-            vm_id = %id,
-            guest_ip = %subnet.guest_ip,
-            cid = guest_cid,
-            "Firecracker VM created"
-        );
-
-        Ok(())
+        result
     }
 
     async fn stop_sandbox(&self, container_name: &str) -> Result<(), String> {
@@ -540,7 +570,7 @@ impl SandboxRuntime for FirecrackerRuntime {
 
         client.resume_instance().await?;
 
-        let snapshot_id = format!("fc-snap-{}-{}", vm_id, comment.replace(' ', "-"));
+        let snapshot_id = format!("fc-snap-{}__{}", vm_id, comment.replace(' ', "-"));
         tracing::info!(vm_id = %vm_id, snapshot_id = %snapshot_id, "VM snapshot created");
 
         Ok(snapshot_id)
@@ -548,9 +578,9 @@ impl SandboxRuntime for FirecrackerRuntime {
 
     async fn inspect_image_size(&self, image_id: &str) -> Result<u64, String> {
         if image_id.starts_with("fc-snap-") {
-            let snap_dir = self.config.snapshot_dir.join(
-                image_id.trim_start_matches("fc-snap-").split('-').next().unwrap_or("")
-            );
+            let remainder = image_id.trim_start_matches("fc-snap-");
+            let vm_id = remainder.split("__").next().unwrap_or(remainder);
+            let snap_dir = self.config.snapshot_dir.join(vm_id);
             let snapshot_path = snap_dir.join("snapshot.bin");
             let mem_path = snap_dir.join("mem.bin");
 
@@ -569,9 +599,9 @@ impl SandboxRuntime for FirecrackerRuntime {
 
     async fn remove_image(&self, image_id: &str) -> Result<(), String> {
         if image_id.starts_with("fc-snap-") {
-            let snap_dir = self.config.snapshot_dir.join(
-                image_id.trim_start_matches("fc-snap-").split('-').next().unwrap_or("")
-            );
+            let remainder = image_id.trim_start_matches("fc-snap-");
+            let vm_id = remainder.split("__").next().unwrap_or(remainder);
+            let snap_dir = self.config.snapshot_dir.join(vm_id);
             let _ = tokio::fs::remove_dir_all(&snap_dir).await;
             return Ok(());
         }
