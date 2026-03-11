@@ -2,25 +2,25 @@
 
 Isolated code execution sandboxes with a full API. Rust worker on [iii-engine](https://github.com/iii-hq/iii) primitives. Docker or Firecracker backends.
 
-```
-SDKs (TS, Python, Rust)       CLI        MCP (39 tools)
-        \                      |          /
-         +--------- REST API (port 3111) -+
-                        |
-                  iii-engine (Rust)
-                  [KV] [Cron] [Queue]
-                        |
-                 Worker (107 functions)
-              sandbox | exec | fs | git
-              env | snapshot | terminal
-              proxy | queue | monitor | ...
-                        |
-              SandboxRuntime trait
-              /                   \
-     DockerRuntime         FirecrackerRuntime
-     (bollard)             (microVM + guest agent)
-         |                        |
-   [containers]              [microVMs]
+```mermaid
+graph TD
+    SDK["SDKs (TS, Python, Rust)"] --> API
+    CLI --> API
+    MCP["MCP Server (39 tools)"] --> API
+    API["REST API :3111"] --> ENGINE
+    ENGINE["iii-engine (Rust)<br/>KV · Cron · Queue"] --> WORKER
+    WORKER["Worker — 107 functions<br/>sandbox · exec · fs · git · env<br/>snapshot · terminal · proxy · queue"] --> RUNTIME
+    RUNTIME["SandboxRuntime trait"] --> DOCKER
+    RUNTIME --> FC
+    DOCKER["DockerRuntime<br/>(bollard)"] --> C1["Containers"]
+    FC["FirecrackerRuntime<br/>(microVM + guest agent)"] --> V1["MicroVMs"]
+
+    style API fill:#2d333b,stroke:#58a6ff,color:#e6edf3
+    style ENGINE fill:#2d333b,stroke:#58a6ff,color:#e6edf3
+    style WORKER fill:#2d333b,stroke:#f78166,color:#e6edf3
+    style RUNTIME fill:#2d333b,stroke:#d29922,color:#e6edf3
+    style DOCKER fill:#2d333b,stroke:#3fb950,color:#e6edf3
+    style FC fill:#2d333b,stroke:#3fb950,color:#e6edf3
 ```
 
 ## Quick Start
@@ -193,6 +193,15 @@ Measured on macOS arm64 with Docker Desktop. Reproducible via `scripts/test-e2e.
 
 ### Cold Start vs Competitors
 
+```mermaid
+%%{init: {'theme': 'dark'}}%%
+xychart-beta
+    title "Cold Start Latency (ms, lower is better)"
+    x-axis ["iii-sandbox", "E2B", "Daytona", "Lambda", "Fly.io", "SlicerVM", "Modal", "Runloop", "CodeSandbox"]
+    y-axis "Latency (ms)" 0 --> 3000
+    bar [200, 175, 197, 300, 500, 1500, 1000, 2000, 2700]
+```
+
 | Platform | Cold Start | Isolation | Self-Hosted | License |
 |----------|-----------|-----------|:-----------:|---------|
 | **iii-sandbox** | **200ms** | Docker + Firecracker | Yes | Apache-2.0 |
@@ -204,6 +213,23 @@ Measured on macOS arm64 with Docker Desktop. Reproducible via `scripts/test-e2e.
 | Modal | ~1s | gVisor | No | -- |
 | Runloop | ~2s | MicroVM | VPC ($) | -- |
 | CodeSandbox | 2.7s (P95) | Docker | No | -- |
+
+### Feature Comparison
+
+|  | iii-sandbox | E2B | Daytona | Modal | SlicerVM | Fly.io | Runloop |
+|--|:-----------:|:---:|:-------:|:-----:|:--------:|:------:|:-------:|
+| **API Endpoints** | **93** | ~20 | ~25 | ~30 | ~25 | ~15 | ~20 |
+| **SDKs** | **TS+Py+Rust** | TS+Py+Go | TS+Py+Go | Py | Go | TS+Go+Py | TS+Py |
+| **MCP Tools** | **39** | -- | -- | -- | -- | -- | -- |
+| **Filesystem Ops** | **12** | 5 | 6 | 2 | 2 | 1 | 3 |
+| **Git Ops** | **9** | -- | API | -- | -- | -- | API |
+| **Code Interpreter** | **3** | 1 | -- | -- | -- | -- | -- |
+| **Queue + DLQ** | **5** | -- | -- | Queues | -- | -- | -- |
+| **Snapshots** | Create/Restore | Mem+FS | Archive | Mem | ZFS | Checkpoint | Disk |
+| **Terminal** | PTY+channels | PTY | SSH | PTY | SSH | SSH | PTY |
+| **HTTP Proxy** | 2-tier+CORS | -- | -- | Webhooks | -- | Proxy | -- |
+| **Isolation** | Docker+**FC** | FC | Docker | gVisor | FC | FC | MicroVM |
+| **Self-Hosted** | **Apache-2.0** | BYOC ($) | AGPL-3.0 | No | $25-250/mo | No | VPC ($) |
 
 Sources and full analysis: [`docs/competitive-analysis.md`](docs/competitive-analysis.md)
 
