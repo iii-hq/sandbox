@@ -557,7 +557,7 @@ fn handle_terminal_create(
         ws_ypixel: 0,
     };
 
-    let pid = unsafe { libc::forkpty(&mut master_fd, std::ptr::null_mut(), std::ptr::null_mut(), &mut ws) };
+    let pid = unsafe { libc::forkpty(&mut master_fd, std::ptr::null_mut(), std::ptr::null_mut(), std::ptr::addr_of_mut!(ws)) };
 
     if pid < 0 {
         return send_response(
