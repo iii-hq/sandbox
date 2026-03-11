@@ -45,7 +45,10 @@ jobs:
       - name: Build (x86_64-unknown-linux-musl)
         run: cargo build --release --target x86_64-unknown-linux-musl --manifest-path packages/guest-agent/Cargo.toml
       - name: Verify static binary
-        run: file packages/guest-agent/target/x86_64-unknown-linux-musl/release/iii-guest-agent | grep -q "statically linked"
+        run: |
+          FILE_OUTPUT=$(file packages/guest-agent/target/x86_64-unknown-linux-musl/release/iii-guest-agent)
+          echo "$FILE_OUTPUT"
+          echo "$FILE_OUTPUT" | grep -qE "static(ally|-pie) linked"
       - uses: actions/upload-artifact@v4
         with:
           name: iii-guest-agent-x86_64
