@@ -25,27 +25,41 @@ graph TD
 
 ## Quick Start
 
+### Docker Compose (recommended)
+
 ```bash
 git clone https://github.com/iii-hq/sandbox.git && cd sandbox
-pnpm install && pnpm build
-
-# Start iii-engine
-iii --config iii-config.yaml
-
-# Start worker
-cd packages/worker && cargo run
-
-# Create a sandbox and run code
-curl -X POST http://localhost:3111/sandbox/sandboxes \
-  -H "Content-Type: application/json" \
-  -d '{"image": "python:3.12-slim"}'
-
-curl -X POST http://localhost:3111/sandbox/sandboxes/<id>/exec \
-  -H "Content-Type: application/json" \
-  -d '{"command": "python3 -c \"print(2+2)\""}'
+docker compose up
 ```
 
-**Requires**: Docker, Node.js 20+, pnpm 9+, Rust 1.82+, [iii-engine](https://github.com/iii-hq/iii) binary
+Engine + worker start on `:3111`. Create a sandbox:
+
+```bash
+curl -s -X POST http://localhost:3111/sandbox/sandboxes \
+  -H "Content-Type: application/json" \
+  -d '{"image": "python:3.12-slim"}' | jq .id
+# → "sbx_abc123"
+
+curl -s -X POST http://localhost:3111/sandbox/sandboxes/sbx_abc123/exec \
+  -H "Content-Type: application/json" \
+  -d '{"command": ["python3", "-c", "print(2+2)"]}' | jq .stdout
+# → "4\n"
+```
+
+### From Source
+
+**Requires**: Docker, Node.js 20+, pnpm 9+, Rust 1.82+, [iii-engine](https://github.com/iii-hq/iii)
+
+```bash
+git clone https://github.com/iii-hq/sandbox.git && cd sandbox
+bash scripts/setup.sh
+
+# Terminal 1: start iii-engine
+iii --config iii-config.yaml
+
+# Terminal 2: start worker
+cd packages/worker && cargo run --release
+```
 
 ## Packages
 
@@ -258,24 +272,7 @@ Details: [`docs/architecture.md`](docs/architecture.md)
 
 ## Config
 
-```yaml
-# iii-config.yaml
-modules:
-  - type: StateModule
-    config:
-      adapter: !FileBased
-        path: ./data/state_store.db
-  - type: RestApiModule
-    config:
-      port: 3111
-      host: "127.0.0.1"
-  - type: QueueModule
-    config:
-      adapter: !Builtin {}
-  - type: CronModule
-    config:
-      adapter: !KvCron {}
-```
+See [`iii-config.yaml`](iii-config.yaml) for engine configuration (state, REST API, queue, cron, observability).
 
 Key env vars: `III_ENGINE_URL`, `III_AUTH_TOKEN`, `III_MAX_SANDBOXES`, `III_ISOLATION_BACKEND`, `III_POOL_SIZE`
 
