@@ -193,13 +193,22 @@ Measured on macOS arm64 with Docker Desktop. Reproducible via `scripts/test-e2e.
 
 ### Cold Start vs Competitors
 
-```mermaid
-%%{init: {'theme': 'dark'}}%%
-xychart-beta
-    title "Cold Start Latency (ms, lower is better)"
-    x-axis ["iii-sandbox", "E2B", "Daytona", "Lambda", "Fly.io", "SlicerVM", "Modal", "Runloop", "CodeSandbox"]
-    y-axis "Latency (ms)" 0 --> 3000
-    bar [200, 175, 197, 300, 500, 1500, 1000, 2000, 2700]
+Cold start comparison using published/measured data from vendor docs, independent benchmarks, and our own measurements:
+
+```
+  iii-sandbox (Docker)  ##................................................  200ms
+  E2B                   ##................................................  150-200ms
+  Daytona               ##................................................  197ms
+  AWS Lambda            #####.............................................  100-500ms
+  SlicerVM              ##################................................  1-2s
+  Fly.io Sprites        ##################................................  300ms-2s
+  Modal                 ############......................................  ~1s
+  Runloop               ########################..........................  ~2s
+  Together/CodeSandbox  #################################.................  2.7s (P95)
+  Kubernetes Jobs       ##################################################  1-15s
+
+  |---------|---------|---------|---------|---------|---------|---------|
+  0       500ms      1s      1.5s      2s      2.5s      3s       5s+
 ```
 
 | Platform | Cold Start | Isolation | Self-Hosted | License |
