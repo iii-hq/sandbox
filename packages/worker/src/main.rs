@@ -44,13 +44,16 @@ async fn main() {
         #[cfg(feature = "firecracker")]
         "firecracker" => {
             use runtime::firecracker::FirecrackerRuntime;
-            Arc::new(FirecrackerRuntime::new(
-                std::path::PathBuf::from("/tmp/firecracker-sockets"),
-                std::path::PathBuf::from(&config.firecracker_kernel),
-                std::path::PathBuf::from(&config.firecracker_rootfs),
-                config.firecracker_vcpus,
-                config.firecracker_mem_mib,
-            ))
+            use runtime::fc_types::FcConfig;
+            let dk = connect_docker();
+            let fc_config = FcConfig {
+                kernel_path: std::path::PathBuf::from(&config.firecracker_kernel),
+                rootfs_cache_dir: std::path::PathBuf::from(&config.firecracker_rootfs),
+                default_vcpus: config.firecracker_vcpus,
+                default_mem_mib: config.firecracker_mem_mib,
+                ..Default::default()
+            };
+            Arc::new(FirecrackerRuntime::new(fc_config, dk))
         }
         "docker" => {
             let dk = connect_docker();

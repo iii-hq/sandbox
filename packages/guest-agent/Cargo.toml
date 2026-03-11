@@ -1,0 +1,22 @@
+[package]
+name = "iii-guest-agent"
+version = "0.1.0"
+edition = "2021"
+description = "Lightweight agent running inside Firecracker VMs for iii-sandbox"
+license = "Apache-2.0"
+authors = ["iii-hq"]
+repository = "https://github.com/iii-hq/sandbox"
+
+[[bin]]
+name = "iii-guest-agent"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

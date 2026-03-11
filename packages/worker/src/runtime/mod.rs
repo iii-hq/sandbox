@@ -147,4 +147,14 @@ pub trait SandboxRuntime: Send + Sync + 'static {
 
 pub mod docker;
 #[cfg(feature = "firecracker")]
+pub mod fc_agent;
+#[cfg(feature = "firecracker")]
+pub mod fc_api;
+#[cfg(feature = "firecracker")]
+pub mod fc_network;
+#[cfg(feature = "firecracker")]
+pub mod fc_rootfs;
+#[cfg(feature = "firecracker")]
+pub mod fc_types;
+#[cfg(feature = "firecracker")]
 pub mod firecracker;
