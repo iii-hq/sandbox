@@ -1,5 +1,8 @@
+#![allow(dead_code, unused_macros, unused_imports)]
+
 use reqwest::Client;
 use serde_json::{json, Value};
+use std::path::PathBuf;
 
 pub struct TestContext {
     pub client: Client,
@@ -68,3 +71,44 @@ impl TestContext {
         let _ = self.api("DELETE", &format!("/sandboxes/{id}"), None).await;
     }
 }
+
+pub fn fc_available() -> bool {
+    let fc_bin = std::env::var("FIRECRACKER_BIN")
+        .unwrap_or_else(|_| "/usr/bin/firecracker".to_string());
+    std::path::Path::new(&fc_bin).exists()
+}
+
+pub fn fc_binary_path() -> PathBuf {
+    PathBuf::from(
+        std::env::var("FIRECRACKER_BIN")
+            .unwrap_or_else(|_| "/usr/bin/firecracker".to_string()),
+    )
+}
+
+pub fn fc_kernel_path() -> PathBuf {
+    PathBuf::from(
+        std::env::var("FIRECRACKER_KERNEL")
+            .unwrap_or_else(|_| "/opt/firecracker/vmlinux".to_string()),
+    )
+}
+
+pub fn fc_agent_path() -> PathBuf {
+    PathBuf::from(
+        std::env::var("FIRECRACKER_AGENT")
+            .unwrap_or_else(|_| "/opt/firecracker/guest-agent".to_string()),
+    )
+}
+
+macro_rules! skip_unless_fc {
+    () => {
+        if !crate::common::fc_available() {
+            eprintln!(
+                "SKIPPED: Firecracker binary not found. \
+                 Set FIRECRACKER_BIN to enable this test."
+            );
+            return;
+        }
+    };
+}
+
+pub(crate) use skip_unless_fc;
