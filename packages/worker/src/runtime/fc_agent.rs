@@ -24,6 +24,7 @@ impl AgentClient {
 
     async fn send_request<Req: serde::Serialize, Resp: serde::de::DeserializeOwned>(
         &self,
+        method: &str,
         endpoint: &str,
         request: &Req,
         timeout_dur: Duration,
@@ -39,7 +40,7 @@ impl AgentClient {
             .map_err(|e| format!("Failed to serialize request: {e}"))?;
 
         let request_line = format!(
-            "POST {endpoint} HTTP/1.1\r\n\
+            "{method} {endpoint} HTTP/1.1\r\n\
              Host: localhost\r\n\
              Content-Type: application/json\r\n\
              Content-Length: {}\r\n\
@@ -92,7 +93,7 @@ impl AgentClient {
 
         let timeout_dur = Duration::from_millis(timeout_ms + 5000);
         let resp: AgentExecResponse = self
-            .send_request("/exec", &req, timeout_dur)
+            .send_request("POST", "/exec", &req, timeout_dur)
             .await?;
 
         Ok(ExecResult {
@@ -123,7 +124,7 @@ impl AgentClient {
         };
 
         let resp: DetachedResp = self
-            .send_request("/exec", &req, DEFAULT_TIMEOUT)
+            .send_request("POST", "/exec", &req, DEFAULT_TIMEOUT)
             .await?;
         Ok(resp.pid)
     }
@@ -143,7 +144,7 @@ impl AgentClient {
         };
 
         let _: serde_json::Value = self
-            .send_request("/file/write", &req, DEFAULT_TIMEOUT)
+            .send_request("POST", "/file/write", &req, DEFAULT_TIMEOUT)
             .await?;
         Ok(())
     }
@@ -154,7 +155,7 @@ impl AgentClient {
         };
 
         let resp: AgentFileReadResponse = self
-            .send_request("/file/read", &req, DEFAULT_TIMEOUT)
+            .send_request("POST", "/file/read", &req, DEFAULT_TIMEOUT)
             .await?;
 
         base64::Engine::decode(
@@ -170,7 +171,7 @@ impl AgentClient {
         };
 
         let entries: Vec<AgentListDirEntry> = self
-            .send_request("/file/list", &req, DEFAULT_TIMEOUT)
+            .send_request("POST", "/file/list", &req, DEFAULT_TIMEOUT)
             .await?;
 
         Ok(entries
@@ -195,7 +196,7 @@ impl AgentClient {
             pattern: pattern.to_string(),
         };
 
-        self.send_request("/file/search", &req, DEFAULT_TIMEOUT).await
+        self.send_request("POST", "/file/search", &req, DEFAULT_TIMEOUT).await
     }
 
     pub async fn file_info(
@@ -207,7 +208,7 @@ impl AgentClient {
         };
 
         let entries: Vec<AgentFileInfoEntry> = self
-            .send_request("/file/info", &req, DEFAULT_TIMEOUT)
+            .send_request("POST", "/file/info", &req, DEFAULT_TIMEOUT)
             .await?;
 
         Ok(entries
@@ -230,7 +231,7 @@ impl AgentClient {
         struct StatsReq {}
 
         let resp: AgentStatsResponse = self
-            .send_request("/stats", &StatsReq {}, DEFAULT_TIMEOUT)
+            .send_request("POST", "/stats", &StatsReq {}, DEFAULT_TIMEOUT)
             .await?;
 
         Ok(SandboxMetrics {
@@ -248,7 +249,7 @@ impl AgentClient {
         #[derive(serde::Serialize)]
         struct ProcReq {}
 
-        self.send_request("/processes", &ProcReq {}, DEFAULT_TIMEOUT).await
+        self.send_request("POST", "/processes", &ProcReq {}, DEFAULT_TIMEOUT).await
     }
 
     pub async fn terminal_create(
@@ -264,7 +265,7 @@ impl AgentClient {
         };
 
         let resp: AgentTerminalCreateResponse = self
-            .send_request("/terminal/create", &req, DEFAULT_TIMEOUT)
+            .send_request("POST", "/terminal/create", &req, DEFAULT_TIMEOUT)
             .await?;
         Ok(resp.session_id)
     }
@@ -283,7 +284,7 @@ impl AgentClient {
         };
 
         let _: serde_json::Value = self
-            .send_request("/terminal/write", &req, DEFAULT_TIMEOUT)
+            .send_request("POST", "/terminal/write", &req, DEFAULT_TIMEOUT)
             .await?;
         Ok(())
     }
@@ -297,7 +298,7 @@ impl AgentClient {
         };
 
         let resp: AgentTerminalReadResponse = self
-            .send_request("/terminal/read", &req, DEFAULT_TIMEOUT)
+            .send_request("POST", "/terminal/read", &req, DEFAULT_TIMEOUT)
             .await?;
 
         let data = base64::Engine::decode(
@@ -322,7 +323,7 @@ impl AgentClient {
         };
 
         let _: serde_json::Value = self
-            .send_request("/terminal/resize", &req, DEFAULT_TIMEOUT)
+            .send_request("POST", "/terminal/resize", &req, DEFAULT_TIMEOUT)
             .await?;
         Ok(())
     }
@@ -336,7 +337,7 @@ impl AgentClient {
         };
 
         let _: serde_json::Value = self
-            .send_request("/terminal/close", &req, DEFAULT_TIMEOUT)
+            .send_request("POST", "/terminal/close", &req, DEFAULT_TIMEOUT)
             .await?;
         Ok(())
     }
@@ -351,7 +352,7 @@ impl AgentClient {
 
         match timeout(
             Duration::from_secs(3),
-            self.send_request::<HealthReq, HealthResp>("/health", &HealthReq {}, Duration::from_secs(3)),
+            self.send_request::<HealthReq, HealthResp>("GET", "/health", &HealthReq {}, Duration::from_secs(3)),
         )
         .await
         {

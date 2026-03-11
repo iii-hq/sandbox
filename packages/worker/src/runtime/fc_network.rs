@@ -90,22 +90,27 @@ pub async fn delete_tap_device(tap_name: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn uplink_iface() -> String {
+    std::env::var("III_UPLINK_IFACE").unwrap_or_else(|_| "eth0".to_string())
+}
+
 pub async fn setup_nat(tap_name: &str, guest_subnet: &str) -> Result<(), String> {
+    let iface = uplink_iface();
     run_cmd(
         "iptables",
-        &["-t", "nat", "-A", "POSTROUTING", "-o", "eth0", "-s", guest_subnet, "-j", "MASQUERADE"],
+        &["-t", "nat", "-A", "POSTROUTING", "-o", &iface, "-s", guest_subnet, "-j", "MASQUERADE"],
     )
     .await?;
 
     run_cmd(
         "iptables",
-        &["-A", "FORWARD", "-i", tap_name, "-o", "eth0", "-j", "ACCEPT"],
+        &["-A", "FORWARD", "-i", tap_name, "-o", &iface, "-j", "ACCEPT"],
     )
     .await?;
 
     run_cmd(
         "iptables",
-        &["-A", "FORWARD", "-i", "eth0", "-o", tap_name, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"],
+        &["-A", "FORWARD", "-i", &iface, "-o", tap_name, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"],
     )
     .await?;
 
@@ -113,23 +118,24 @@ pub async fn setup_nat(tap_name: &str, guest_subnet: &str) -> Result<(), String>
 }
 
 pub async fn teardown_nat(tap_name: &str, guest_subnet: &str) -> Result<(), String> {
+    let iface = uplink_iface();
     run_cmd(
         "iptables",
-        &["-t", "nat", "-D", "POSTROUTING", "-o", "eth0", "-s", guest_subnet, "-j", "MASQUERADE"],
+        &["-t", "nat", "-D", "POSTROUTING", "-o", &iface, "-s", guest_subnet, "-j", "MASQUERADE"],
     )
     .await
     .ok();
 
     run_cmd(
         "iptables",
-        &["-D", "FORWARD", "-i", tap_name, "-o", "eth0", "-j", "ACCEPT"],
+        &["-D", "FORWARD", "-i", tap_name, "-o", &iface, "-j", "ACCEPT"],
     )
     .await
     .ok();
 
     run_cmd(
         "iptables",
-        &["-D", "FORWARD", "-i", "eth0", "-o", tap_name, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"],
+        &["-D", "FORWARD", "-i", &iface, "-o", tap_name, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"],
     )
     .await
     .ok();

@@ -169,12 +169,17 @@ fn handle_exec(stream: &mut std::net::TcpStream, body: &str) -> Result<(), Strin
         match cmd.spawn() {
             Ok(child) => {
                 let pid = child.id().to_string();
+                std::thread::spawn(move || {
+                    let mut child = child;
+                    let _ = child.wait();
+                });
                 send_response(stream, 200, &serde_json::json!({"pid": pid}))
             }
             Err(e) => send_response(stream, 500, &serde_json::json!({"error": e.to_string()})),
         }
     } else {
         let start = Instant::now();
+        let timeout_ms = req.timeout_ms.unwrap_or(300_000);
         let mut cmd = Command::new(&req.command[0]);
         cmd.args(&req.command[1..]);
 
@@ -187,8 +192,32 @@ fn handle_exec(stream: &mut std::net::TcpStream, body: &str) -> Result<(), Strin
             }
         }
 
-        match cmd.output() {
-            Ok(output) => {
+        match cmd.spawn() {
+            Ok(mut child) => {
+                let timeout_dur = std::time::Duration::from_millis(timeout_ms);
+                let deadline = Instant::now() + timeout_dur;
+                loop {
+                    match child.try_wait() {
+                        Ok(Some(_)) => break,
+                        Ok(None) => {
+                            if Instant::now() >= deadline {
+                                let _ = child.kill();
+                                let _ = child.wait();
+                                let duration = start.elapsed().as_millis() as u64;
+                                return send_response(stream, 200, &ExecResponse {
+                                    exit_code: -1,
+                                    stdout: String::new(),
+                                    stderr: format!("Command timed out after {timeout_ms}ms"),
+                                    duration_ms: duration,
+                                });
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(10));
+                        }
+                        Err(e) => return send_response(stream, 500, &serde_json::json!({"error": e.to_string()})),
+                    }
+                }
+                let output = child.wait_with_output()
+                    .map_err(|e| e.to_string())?;
                 let duration = start.elapsed().as_millis() as u64;
                 let resp = ExecResponse {
                     exit_code: output.status.code().unwrap_or(-1) as i64,

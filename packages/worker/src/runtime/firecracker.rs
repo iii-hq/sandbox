@@ -45,6 +45,16 @@ impl FirecrackerRuntime {
         }
     }
 
+    fn validate_vm_id(vm_id: &str) -> Result<(), String> {
+        if vm_id.is_empty() {
+            return Err("VM ID cannot be empty".to_string());
+        }
+        if vm_id.contains('/') || vm_id.contains('\\') || vm_id.contains("..") || vm_id.contains('\0') {
+            return Err(format!("Invalid VM ID (path traversal): {vm_id}"));
+        }
+        Ok(())
+    }
+
     fn socket_path(&self, vm_id: &str) -> PathBuf {
         self.config.socket_dir.join(format!("{vm_id}.sock"))
     }
@@ -279,6 +289,7 @@ impl SandboxRuntime for FirecrackerRuntime {
         config: &SandboxConfig,
         _entrypoint: Option<&[String]>,
     ) -> Result<(), String> {
+        Self::validate_vm_id(id)?;
         let vcpus = config.cpu.map(|c| c as u32).unwrap_or(self.config.default_vcpus);
         let mem_mib = config.memory.unwrap_or(self.config.default_mem_mib);
 
@@ -548,6 +559,7 @@ impl SandboxRuntime for FirecrackerRuntime {
         comment: &str,
     ) -> Result<String, String> {
         let vm_id = Self::strip_prefix(container_name);
+        Self::validate_vm_id(vm_id)?;
 
         let client = self.fc_client(vm_id);
         client.pause_instance().await?;
@@ -655,6 +667,7 @@ impl SandboxRuntime for FirecrackerRuntime {
         name: &str,
         _labels: HashMap<String, String>,
     ) -> Result<(), String> {
+        Self::validate_vm_id(name)?;
         let vol_dir = self.config.rootfs_cache_dir.join("volumes").join(name);
         tokio::fs::create_dir_all(&vol_dir)
             .await
@@ -663,6 +676,7 @@ impl SandboxRuntime for FirecrackerRuntime {
     }
 
     async fn remove_volume(&self, name: &str) -> Result<(), String> {
+        Self::validate_vm_id(name)?;
         let vol_dir = self.config.rootfs_cache_dir.join("volumes").join(name);
         if vol_dir.exists() {
             tokio::fs::remove_dir_all(&vol_dir)
@@ -794,5 +808,15 @@ mod tests {
         let docker = Arc::new(Docker::connect_with_local_defaults().unwrap());
         let rt = FirecrackerRuntime::new(FcConfig::default(), docker);
         rt.resize_exec("exec-123", 80, 24).await.unwrap();
+    }
+
+    #[test]
+    fn validate_vm_id_rejects_traversal() {
+        assert!(FirecrackerRuntime::validate_vm_id("").is_err());
+        assert!(FirecrackerRuntime::validate_vm_id("../etc/passwd").is_err());
+        assert!(FirecrackerRuntime::validate_vm_id("foo/bar").is_err());
+        assert!(FirecrackerRuntime::validate_vm_id("foo\\bar").is_err());
+        assert!(FirecrackerRuntime::validate_vm_id("valid-id-123").is_ok());
+        assert!(FirecrackerRuntime::validate_vm_id("abc_def.test").is_ok());
     }
 }

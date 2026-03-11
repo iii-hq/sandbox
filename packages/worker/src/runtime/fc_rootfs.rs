@@ -43,17 +43,21 @@ pub async fn ensure_rootfs(
 
     merge_layers(&extract_dir, &merged_dir).await?;
 
-    if agent_path.exists() {
-        let agent_dest = merged_dir.join("usr/local/bin/iii-guest-agent");
-        if let Some(parent) = agent_dest.parent() {
-            fs::create_dir_all(parent)
-                .await
-                .map_err(|e| format!("Failed to create agent dir: {e}"))?;
-        }
-        fs::copy(agent_path, &agent_dest)
-            .await
-            .map_err(|e| format!("Failed to copy guest agent: {e}"))?;
+    if !agent_path.exists() {
+        return Err(format!(
+            "Guest agent binary not found at {}. Build it first: cd packages/guest-agent && cargo build --release --target x86_64-unknown-linux-musl",
+            agent_path.display()
+        ));
     }
+    let agent_dest = merged_dir.join("usr/local/bin/iii-guest-agent");
+    if let Some(parent) = agent_dest.parent() {
+        fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("Failed to create agent dir: {e}"))?;
+    }
+    fs::copy(agent_path, &agent_dest)
+        .await
+        .map_err(|e| format!("Failed to copy guest agent: {e}"))?;
 
     super::fc_init::inject_init(&merged_dir).await?;
 
@@ -316,7 +320,8 @@ async fn create_ext4(source_dir: &Path, output_path: &Path) -> Result<(), String
                 match output {
                     Ok(o) if !o.status.success() => {
                         let stderr = String::from_utf8_lossy(&o.stderr);
-                        tracing::warn!(path = %src.display(), stderr = %stderr, "cp to rootfs had warnings");
+                        cp_error = Some(format!("Failed to copy {} to rootfs: {stderr}", src.display()));
+                        break;
                     }
                     Err(e) => {
                         cp_error = Some(format!("Failed to copy {} to rootfs: {e}", src.display()));
