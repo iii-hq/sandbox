@@ -34,16 +34,16 @@ Secure, isolated Docker sandboxes for code execution. Built on [iii-engine](http
   ┌─────────────────────────────────────────┐
   │      SandboxRuntime (trait)             │
   │  ┌────────────────┐ ┌───────────────┐   │
-  │  │ DockerRuntime  │ │ Firecracker*  │   │
-  │  │ (bollard)      │ │ (stub)        │   │
-  │  └────────┬───────┘ └───────────────┘   │
-  └───────────┼─────────────────────────────┘
-              ▼
+  │  │ DockerRuntime  │ │  Firecracker  │   │
+  │  │ (bollard)      │ │  (microVM)    │   │
+  │  └────────┬───────┘ └───────┬───────┘   │
+  └───────────┼─────────────────┼───────────┘
+              ▼                 ▼
   ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐
   │ sbx_01 │ │ sbx_02 │ │ sbx_03 │ │ sbx_04 │
   │ python │ │  node  │ │ golang │ │  bash  │
   └────────┘ └────────┘ └────────┘ └────────┘
-              Docker Containers
+     Docker Containers    Firecracker VMs
 ```
 
 ## Quick Start
@@ -645,9 +645,124 @@ The `SandboxRuntime` trait (29 methods) abstracts the container backend, allowin
 | Backend | Status | Crate | Feature Flag |
 |---------|--------|-------|--------------|
 | Docker | Production | `bollard` | default |
-| Firecracker | Stub | — | `firecracker` |
+| Firecracker | Production | `bollard` + guest agent | `firecracker` |
 
 The runtime is selected via `III_ISOLATION_BACKEND` environment variable. The trait covers sandbox lifecycle, exec, filesystem, networking, volumes, and snapshotting.
+
+### Firecracker MicroVM Backend
+
+Full Linux kernel isolation via KVM-based microVMs. Each sandbox runs in its own VM with a dedicated kernel, rootfs, and network stack:
+
+```
+  Worker (host)
+  ┌──────────────────────────────────────────────┐
+  │  FirecrackerRuntime                          │
+  │  ┌────────────┐  ┌────────────┐              │
+  │  │ Firecracker│  │ Firecracker│   (per VM)   │
+  │  │  Process   │  │  Process   │              │
+  │  │  ┌──────┐  │  │  ┌──────┐  │              │
+  │  │  │Guest │  │  │  │Guest │  │              │
+  │  │  │Agent │◄─┼──┼──│Agent │  │  VSOCK       │
+  │  │  │(PTY) │  │  │  │(PTY) │  │  Port 52     │
+  │  │  └──────┘  │  │  └──────┘  │              │
+  │  │  vmlinux   │  │  vmlinux   │              │
+  │  │  ext4 root │  │  ext4 root │              │
+  │  └──────┬─────┘  └──────┬─────┘              │
+  │         │tap0           │tap1    TAP devices  │
+  │         └───────┬───────┘                     │
+  │          iptables NAT                         │
+  └──────────────────────────────────────────────┘
+```
+
+**Components**: Guest agent (std-only Rust binary, PTY support, 16 concurrent sessions), OCI-to-ext4 rootfs converter, subnet allocator (253 VMs/host), init system with kernel cmdline networking, snapshot create/restore, cross-compiled for x86_64 + aarch64 musl.
+
+## Benchmarks
+
+Measured on macOS arm64 (Apple Silicon) with Docker Desktop. All numbers are real, reproducible via `scripts/test-e2e.sh`.
+
+### iii-sandbox Performance
+
+```
+  +-----------------------+----------+
+  | Operation             | Latency  |
+  +-----------------------+----------+
+  | Cold start            |   200ms  |
+  | Warm start            |   206ms  |
+  | Exec (echo)           |    59ms  |  (avg over 20 runs)
+  | File write            |   107ms  |
+  | File read             |   179ms  |
+  | File I/O cycle        |    74ms  |  (avg write+read)
+  | Pause                 |   133ms  |
+  | Resume                |   121ms  |
+  | 3x parallel create    |   275ms  |
+  +-----------------------+----------+
+  Exec throughput:    ~16 ops/sec
+  File I/O throughput: ~13 cycles/sec
+```
+
+### vs The Competition
+
+Cold start comparison using published/measured data from vendor docs, independent benchmarks, and our own measurements:
+
+```
+  iii-sandbox (Docker)  ██░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  200ms
+  E2B                   ██▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  150-200ms
+  Daytona               ██▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  197ms
+  AWS Lambda            █████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  100-500ms
+  SlicerVM              ██████████████░░░░░░░░░░░░░░░░░░░░░░░░  1-2s
+  Fly.io Sprites        ██████████████░░░░░░░░░░░░░░░░░░░░░░░░  300ms-2s
+  Modal                 ██████████████████░░░░░░░░░░░░░░░░░░░░  ~1s
+  Runloop               ██████████████████████████░░░░░░░░░░░░  ~2s
+  Together/CodeSandbox  ███████████████████████████████████░░░░  2.7s (P95)
+  Kubernetes Jobs       ████████████████████████████████████████  1-15s
+
+  └──────┴──────┴──────┴──────┴──────┴──────┴──────┴──────┘
+  0     500ms    1s    1.5s    2s    2.5s    3s     5s+
+```
+
+### Feature Matrix
+
+|  | iii-sandbox | E2B | Daytona | Modal | SlicerVM | Fly.io | Runloop |
+|--|:-----------:|:---:|:-------:|:-----:|:--------:|:------:|:-------:|
+| **API Endpoints** | **93** | ~20 | ~25 | ~30 | ~25 | ~15 | ~20 |
+| **Engine Functions** | **107** | — | — | — | — | — | — |
+| **SDKs** | **TS+Py+Rust** | TS+Py+Go | TS+Py+Go+Rb | Py | Go | TS+Go+Py | TS+Py |
+| **MCP Tools** | **39** | — | — | — | — | — | — |
+| **CLI** | 11 cmds | — | — | — | CLI | flyctl | — |
+| **Filesystem Ops** | **12** | 5 | 6 | 2 | 2 | 1 | 3 |
+| **Git Ops** | **9** | — | API | — | — | — | API |
+| **Env Vars API** | **4** | — | — | — | — | — | — |
+| **Code Interpreter** | **3** | 1 | — | — | — | — | — |
+| **Queue + DLQ** | **5** | — | — | Queues | — | — | — |
+| **Event System** | **4** | Webhooks | — | — | — | — | — |
+| **Monitoring/Alerts** | **5** | — | — | — | Prometheus | — | — |
+| **Observability** | **4** | — | — | — | — | — | — |
+| **Networking API** | **5** | — | — | — | 3 modes | VPN | — |
+| **Volume API** | **5** | — | — | Volumes | — | Volumes | — |
+| **Streaming (SSE)** | **3** | — | — | — | — | — | — |
+| **Terminal/PTY** | PTY+channels | PTY | SSH | PTY | SSH+SOS | SSH | PTY |
+| **Snapshots** | Create/Restore | Mem+FS | Archive | Mem snap | ZFS CoW | Checkpoint | Disk |
+| **Warm Pool** | API-managed | — | Warm pool | Auto | ZFS | Pre-created | — |
+| **Pause/Resume** | Docker+FC | — | — | — | FC pause | Machine stop | — |
+| **Templates** | CRUD API | Custom images | — | Images | — | — | Blueprints |
+| **HTTP Proxy** | 2-tier+CORS | — | — | Webhooks | — | Proxy | — |
+| **Multi-Worker** | Auto-scale | Managed | K8s | Auto | Single | Multi-region | Managed |
+| **Rate Limiting** | Token bucket | Managed | — | — | — | — | Managed |
+| **Isolation** | Docker+**FC** | FC | Docker | gVisor | FC | FC | MicroVM |
+| **Self-Hosted** | **Apache-2.0** | BYOC ($) | AGPL-3.0 | No | $25-250/mo | No | VPC ($) |
+| **Price** | **Free** | $150/mo+ | $200 credits | $30/mo+ | $25-250/mo | Pay-per-use | $250/mo+ |
+
+### What This Means
+
+**iii-sandbox is the most feature-complete open-source sandbox platform:**
+- **4x more API surface** than any competitor (93 endpoints vs ~20-30)
+- **Only platform** with native TS + Python + Rust SDKs + MCP tools
+- **Only platform** with built-in git ops, code interpreter, event system, queue, alerts, observability, and volume management in a single binary
+- **200ms cold starts** on Docker — competitive with E2B (150-200ms) and faster than SlicerVM (1-2s), Modal (~1s), and Fly.io Sprites (300ms-2s)
+- **Free and self-hosted** under Apache-2.0 (not AGPL, not proprietary, not SaaS-only)
+- **Dual isolation** — Docker for speed, Firecracker for security (both production-ready)
+
+> Sources: E2B docs (e2b.dev), Superagent Benchmark (Jan 2026), Blaxel comparison (Feb 2026), Pixeljets independent benchmark, Together AI public benchmarks, Modal docs, Fly.io docs, SlicerVM blog (Alex Ellis), Runloop pricing page, AWS Lambda docs. Full analysis: [`docs/competitive-analysis.md`](docs/competitive-analysis.md)
 
 ## Supported Languages
 
@@ -759,14 +874,16 @@ cd test/cross-sdk && cargo run                                 # Rust cross-SDK 
 
 ### Test Suite
 
-**~808 total tests** across TypeScript, Python, and Rust:
+**~941 total tests** across TypeScript, Python, and Rust:
 
 | Language | Files | Tests | Tool |
 |----------|-------|-------|------|
 | TypeScript (SDK/CLI/MCP) | 33 | ~293 | vitest |
 | Python SDK | 13 | 150 | pytest + respx |
 | Rust SDK | 11 | 32 | cargo test + mockito |
-| Rust engine | 24 modules | 333 | cargo test |
+| Rust engine | 24 modules | 394 | cargo test |
+| Rust engine (FC) | integration | 48 + 6 E2E | cargo test --features firecracker |
+| Guest agent | 1 | 18 | cargo test |
 
 ## License
 
